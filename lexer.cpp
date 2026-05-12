@@ -158,13 +158,11 @@ Token Lexer::lex_operator_or_punct() {
         case ']': return make_token(TokenKind::RBracket,  start);
         case ',': return make_token(TokenKind::Comma,     start);
         case ';': return make_token(TokenKind::Semicolon, start);
-        case '.': return make_token(TokenKind::Dot,       start);
         case '+': return make_token(TokenKind::Plus,      start);
+        case '-': return make_token(TokenKind::Minus,     start);
         case '*': return make_token(TokenKind::Star,      start);
         case '/': return make_token(TokenKind::Slash,     start);
         case '%': return make_token(TokenKind::Percent,   start);
-        case '-': return match('>') ? make_token(TokenKind::Arrow,      start)
-                                    : make_token(TokenKind::Minus,      start);
         case ':': return match(':') ? make_token(TokenKind::ColonColon, start)
                                     : make_token(TokenKind::Colon,      start);
         case '!': return match('=') ? make_token(TokenKind::NotEq,      start)

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <string>
 #include <vector>
 
@@ -14,8 +13,8 @@ struct ParseError {
 };
 
 struct ParseResult {
-    bool ok = false;
-    std::unique_ptr<AST::Program> program;
+    bool      ok = false;
+    AST::Program program;
     ParseError error;
 };
 

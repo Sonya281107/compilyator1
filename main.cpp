@@ -11,16 +11,22 @@ static void print_tokens(const std::vector<Lexer::Token>& tokens) {
 }
 
 static void count_decls(const AST::Program& prog) {
-    std::cout << "Parsed " << prog.decls.size() << " top-level declaration(s).\n";
-    for (const auto& d : prog.decls) {
-        if (auto* fn = dynamic_cast<AST::FnDecl*>(d.get()))
-            std::cout << "  fn " << fn->name << " (" << fn->params.size() << " param(s))\n";
-        else if (auto* st = dynamic_cast<AST::StructDecl*>(d.get()))
-            std::cout << "  struct " << st->name << " (" << st->fields.size() << " field(s))\n";
-        else if (auto* ns = dynamic_cast<AST::NamespaceDecl*>(d.get()))
-            std::cout << "  namespace " << ns->name << "\n";
-        else if (auto* ta = dynamic_cast<AST::TypeAliasDecl*>(d.get()))
-            std::cout << "  type " << ta->name << "\n";
+    std::cout << "Parsed " << prog.top_decls.size() << " top-level declaration(s).\n";
+    for (AST::DeclId did : prog.top_decls) {
+        const AST::DeclNode& d = prog.decl(did);
+        if (std::holds_alternative<AST::FnDecl>(d)) {
+            auto& fn = std::get<AST::FnDecl>(d);
+            std::cout << "  fn " << fn.name << " (" << fn.params.size() << " param(s))\n";
+        } else if (std::holds_alternative<AST::StructDecl>(d)) {
+            auto& st = std::get<AST::StructDecl>(d);
+            std::cout << "  struct " << st.name << " (" << st.fields.size() << " field(s))\n";
+        } else if (std::holds_alternative<AST::NamespaceDecl>(d)) {
+            auto& ns = std::get<AST::NamespaceDecl>(d);
+            std::cout << "  namespace " << ns.name << "\n";
+        } else if (std::holds_alternative<AST::TypeAliasDecl>(d)) {
+            auto& ta = std::get<AST::TypeAliasDecl>(d);
+            std::cout << "  type " << ta.name << "\n";
+        }
     }
 }
 
@@ -31,11 +37,11 @@ struct Point {
     y: f64
 }
 
-fn add(a: i32, b: i32) -> i32 {
+fn add(a: i32, b: i32): i32 {
     return a + b;
 }
 
-fn main() -> i32 {
+fn main(): i32 {
     let mut p: Point = Point { x: 1.0, y: 2.5 };
     let result: i32 = add(3, 4);
     if result >= 5 {
@@ -64,6 +70,6 @@ fn main() -> i32 {
         return 1;
     }
 
-    count_decls(*parse.program);
+    count_decls(parse.program);
     return 0;
 }

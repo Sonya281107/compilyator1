@@ -40,8 +40,8 @@ static bool is_type_kw(TokenKind k) {
 
 class P {
 public:
-    P(const std::vector<Token>& toks, const std::string& fname)
-        : tokens_(toks), filename_(fname) {}
+    P(const std::vector<Token>& toks, const std::string& fname, Program& prog)
+        : tokens_(toks), filename_(fname), prog_(prog) {}
 
 private:
     const Token& cur() const { return tokens_[pos_]; }
@@ -78,37 +78,37 @@ private:
         throw ParseError{d};
     }
 
-    TypePtr parse_type() {
+    TypeId parse_type() {
         SourceSpan span;
         span.begin = cur().span.begin;
 
         if (is_type_kw(cur().kind)) {
-            auto n  = std::make_unique<PrimTypeNode>();
-            n->prim = prim_from_kw(cur().kind);
-            n->span = {span.begin, cur().span.end};
+            PrimTypeNode n;
+            n.prim = prim_from_kw(cur().kind);
+            n.span = {span.begin, cur().span.end};
             consume();
-            return n;
+            return prog_.add_type(n);
         }
 
         if (at(TokenKind::Identifier)) {
-            auto n  = std::make_unique<NamedTypeNode>();
-            n->name = cur().lexeme;
-            n->span = cur().span;
+            NamedTypeNode n;
+            n.name = cur().lexeme;
+            n.span = cur().span;
             consume();
-            return n;
+            return prog_.add_type(n);
         }
 
         if (at(TokenKind::LBracket)) {
             consume();
-            auto n    = std::make_unique<ArrayTypeNode>();
-            n->elem   = parse_type();
+            ArrayTypeNode n;
+            n.elem = parse_type();
             expect(TokenKind::Semicolon, "';'");
             if (!at(TokenKind::IntLiteral)) error("expected array size");
-            n->size   = static_cast<std::size_t>(std::stoul(cur().lexeme));
-            n->span.end = cur().span.end;
+            n.size     = static_cast<std::size_t>(std::stoul(cur().lexeme));
+            n.span.end = cur().span.end;
             consume();
             expect(TokenKind::RBracket, "']'");
-            return n;
+            return prog_.add_type(n);
         }
 
         error("expected type");
@@ -136,120 +136,94 @@ private:
         }
     }
 
-    ExprPtr parse_expr(int min_prec = 0) {
-        ExprPtr left = parse_unary();
+    ExprId parse_expr(int min_prec = 0) {
+        ExprId left = parse_unary();
 
         while (true) {
             auto [prec, right_assoc] = infix(cur().kind);
             if (prec <= min_prec) break;
 
-            SourceSpan span = cur().span;
-
             if (cur().kind == TokenKind::Assign) {
                 consume();
-                auto rhs = parse_expr(prec - 1);
-                SourceSpan full{left->span.begin, rhs->span.end};
-                auto node      = std::make_unique<AssignExpr>();
-                node->span     = full;
-                node->target   = std::move(left);
-                node->value    = std::move(rhs);
-                left = std::move(node);
+                ExprId rhs = parse_expr(prec - 1);
+                SourcePos left_begin = expr_span(prog_.expr(left)).begin;
+                SourcePos rhs_end    = expr_span(prog_.expr(rhs)).end;
+                AssignExpr node;
+                node.span   = {left_begin, rhs_end};
+                node.target = left;
+                node.value  = rhs;
+                left = prog_.add_expr(std::move(node));
                 continue;
             }
 
             if (cur().kind == TokenKind::AsKw) {
+                SourcePos left_begin = expr_span(prog_.expr(left)).begin;
                 consume();
-                TypePtr target = parse_type();
-                auto node      = std::make_unique<CastExpr>();
-                node->span     = {left->span.begin, target->span.end};
-                node->operand  = std::move(left);
-                node->target   = std::move(target);
-                left = std::move(node);
+                TypeId target_id = parse_type();
+                SourcePos target_end = type_span(prog_.type(target_id)).end;
+                CastExpr node;
+                node.span    = {left_begin, target_end};
+                node.operand = left;
+                node.target  = target_id;
+                left = prog_.add_expr(std::move(node));
                 continue;
             }
 
+            SourcePos left_begin = expr_span(prog_.expr(left)).begin;
             std::string op = cur().lexeme;
             consume();
             int next_min = right_assoc ? prec - 1 : prec;
-            auto rhs = parse_expr(next_min);
-            SourceSpan full{left->span.begin, rhs->span.end};
-            auto node    = std::make_unique<BinaryExpr>();
-            node->span   = full;
-            node->op     = op;
-            node->left   = std::move(left);
-            node->right  = std::move(rhs);
-            left = std::move(node);
+            ExprId rhs = parse_expr(next_min);
+            SourcePos rhs_end = expr_span(prog_.expr(rhs)).end;
+            BinaryExpr node;
+            node.span  = {left_begin, rhs_end};
+            node.op    = op;
+            node.left  = left;
+            node.right = rhs;
+            left = prog_.add_expr(std::move(node));
         }
         return left;
     }
 
-    ExprPtr parse_unary() {
+    ExprId parse_unary() {
         if (at(TokenKind::Minus) || at(TokenKind::Bang)) {
             SourcePos start = cur().span.begin;
-            std::string op = cur().lexeme;
+            std::string op  = cur().lexeme;
             consume();
-            auto operand = parse_unary();
-            auto node    = std::make_unique<UnaryExpr>();
-            node->span   = {start, operand->span.end};
-            node->op     = op;
-            node->operand= std::move(operand);
-            return node;
+            ExprId operand = parse_unary();
+            SourcePos operand_end = expr_span(prog_.expr(operand)).end;
+            UnaryExpr node;
+            node.span    = {start, operand_end};
+            node.op      = op;
+            node.operand = operand;
+            return prog_.add_expr(std::move(node));
         }
         return parse_postfix(parse_primary());
     }
 
-    ExprPtr parse_postfix(ExprPtr left) {
+    ExprId parse_postfix(ExprId left) {
         while (true) {
             if (at(TokenKind::LBracket)) {
-                SourcePos start = left->span.begin;
+                SourcePos start = expr_span(prog_.expr(left)).begin;
                 consume();
-                auto idx = parse_expr();
+                ExprId idx = parse_expr();
                 expect(TokenKind::RBracket, "']'");
-                auto node   = std::make_unique<IndexExpr>();
-                node->span  = {start, cur().span.begin};
-                node->array = std::move(left);
-                node->index = std::move(idx);
-                left = std::move(node);
-                continue;
-            }
-
-            if (at(TokenKind::Dot)) {
-                SourcePos start = left->span.begin;
-                consume();
-                if (!at(TokenKind::Identifier)) error("expected field name after '.'");
-                std::string fname = cur().lexeme;
-                SourcePos end = cur().span.end;
-                consume();
-
-                if (at(TokenKind::LParen)) {
-                    consume();
-                    auto node       = std::make_unique<CallExpr>();
-                    auto fe         = std::make_unique<FieldExpr>();
-                    fe->span        = {start, end};
-                    fe->field       = fname;
-                    fe->object      = std::move(left);
-                    node->callee    = std::move(fe);
-                    node->args      = parse_arg_list();
-                    expect(TokenKind::RParen, "')'");
-                    node->span      = {start, cur().span.begin};
-                    left = std::move(node);
-                } else {
-                    auto node   = std::make_unique<FieldExpr>();
-                    node->span  = {start, end};
-                    node->field = fname;
-                    node->object= std::move(left);
-                    left = std::move(node);
-                }
+                IndexExpr node;
+                node.span  = {start, cur().span.begin};
+                node.array = left;
+                node.index = idx;
+                left = prog_.add_expr(std::move(node));
                 continue;
             }
 
             if (at(TokenKind::ColonColon)) {
-                SourcePos start = left->span.begin;
+                SourcePos start = expr_span(prog_.expr(left)).begin;
                 consume();
                 if (!at(TokenKind::Identifier)) error("expected name after '::'");
+
                 std::string ns_name;
-                if (auto* id = dynamic_cast<IdentExpr*>(left.get()))
-                    ns_name = id->name;
+                if (std::holds_alternative<IdentExpr>(prog_.expr(left)))
+                    ns_name = std::get<IdentExpr>(prog_.expr(left)).name;
                 else
                     error("'::' must follow a namespace name");
 
@@ -259,35 +233,36 @@ private:
 
                 if (at(TokenKind::LParen)) {
                     consume();
-                    auto se      = std::make_unique<ScopeExpr>();
-                    se->span     = {start, end};
-                    se->ns       = ns_name;
-                    se->name     = member;
-                    auto node    = std::make_unique<CallExpr>();
-                    node->callee = std::move(se);
-                    node->args   = parse_arg_list();
+                    ScopeExpr se;
+                    se.span = {start, end};
+                    se.ns   = ns_name;
+                    se.name = member;
+                    ExprId se_id = prog_.add_expr(std::move(se));
+                    CallExpr node;
+                    node.callee = se_id;
+                    node.args   = parse_arg_list();
                     expect(TokenKind::RParen, "')'");
-                    node->span   = {start, cur().span.begin};
-                    left = std::move(node);
+                    node.span = {start, cur().span.begin};
+                    left = prog_.add_expr(std::move(node));
                 } else {
-                    auto node  = std::make_unique<ScopeExpr>();
-                    node->span = {start, end};
-                    node->ns   = ns_name;
-                    node->name = member;
-                    left = std::move(node);
+                    ScopeExpr node;
+                    node.span = {start, end};
+                    node.ns   = ns_name;
+                    node.name = member;
+                    left = prog_.add_expr(std::move(node));
                 }
                 continue;
             }
 
             if (at(TokenKind::LParen)) {
-                SourcePos start = left->span.begin;
+                SourcePos start = expr_span(prog_.expr(left)).begin;
                 consume();
-                auto node    = std::make_unique<CallExpr>();
-                node->callee = std::move(left);
-                node->args   = parse_arg_list();
+                CallExpr node;
+                node.callee = left;
+                node.args   = parse_arg_list();
                 expect(TokenKind::RParen, "')'");
-                node->span   = {start, cur().span.begin};
-                left = std::move(node);
+                node.span = {start, cur().span.begin};
+                left = prog_.add_expr(std::move(node));
                 continue;
             }
 
@@ -296,8 +271,8 @@ private:
         return left;
     }
 
-    std::vector<ExprPtr> parse_arg_list() {
-        std::vector<ExprPtr> args;
+    std::vector<ExprId> parse_arg_list() {
+        std::vector<ExprId> args;
         if (at(TokenKind::RParen)) return args;
         args.push_back(parse_expr());
         while (try_eat(TokenKind::Comma))
@@ -305,27 +280,27 @@ private:
         return args;
     }
 
-    ExprPtr parse_primary(bool allow_struct_lit = true) {
+    ExprId parse_primary(bool allow_struct_lit = true) {
         SourcePos start = cur().span.begin;
 
         if (at(TokenKind::IntLiteral)) {
             int64_t val = 0;
             std::from_chars(cur().lexeme.data(),
                             cur().lexeme.data() + cur().lexeme.size(), val);
-            auto n  = std::make_unique<IntLitExpr>();
-            n->span = cur().span;
-            n->value= val;
+            IntLitExpr n;
+            n.span  = cur().span;
+            n.value = val;
             consume();
-            return n;
+            return prog_.add_expr(std::move(n));
         }
 
         if (at(TokenKind::FloatLiteral)) {
             double val = std::stod(cur().lexeme);
-            auto n  = std::make_unique<FloatLitExpr>();
-            n->span = cur().span;
-            n->value= val;
+            FloatLitExpr n;
+            n.span  = cur().span;
+            n.value = val;
             consume();
-            return n;
+            return prog_.add_expr(std::move(n));
         }
 
         if (at(TokenKind::StringLiteral)) {
@@ -344,24 +319,24 @@ private:
                     }
                 } else { val += raw[i]; }
             }
-            auto n  = std::make_unique<StringLitExpr>();
-            n->span = cur().span;
-            n->value= std::move(val);
+            StringLitExpr n;
+            n.span  = cur().span;
+            n.value = std::move(val);
             consume();
-            return n;
+            return prog_.add_expr(std::move(n));
         }
 
         if (at(TokenKind::TrueKw) || at(TokenKind::FalseKw)) {
-            auto n  = std::make_unique<BoolLitExpr>();
-            n->span = cur().span;
-            n->value= at(TokenKind::TrueKw);
+            BoolLitExpr n;
+            n.span  = cur().span;
+            n.value = at(TokenKind::TrueKw);
             consume();
-            return n;
+            return prog_.add_expr(std::move(n));
         }
 
         if (at(TokenKind::LParen)) {
             consume();
-            auto e = parse_expr();
+            ExprId e = parse_expr();
             expect(TokenKind::RParen, "')'");
             return e;
         }
@@ -369,132 +344,141 @@ private:
         if (at(TokenKind::LBracket)) {
             SourcePos arr_start = cur().span.begin;
             consume();
-            auto n = std::make_unique<ArrayLitExpr>();
+            ArrayLitExpr n;
             if (!at(TokenKind::RBracket)) {
-                n->elements.push_back(parse_expr());
+                n.elements.push_back(parse_expr());
                 while (try_eat(TokenKind::Comma) && !at(TokenKind::RBracket))
-                    n->elements.push_back(parse_expr());
+                    n.elements.push_back(parse_expr());
             }
-            n->span = {arr_start, cur().span.end};
+            n.span = {arr_start, cur().span.end};
             expect(TokenKind::RBracket, "']'");
-            return n;
+            return prog_.add_expr(std::move(n));
         }
 
         if (at(TokenKind::Identifier)) {
-            std::string name = cur().lexeme;
+            std::string name   = cur().lexeme;
             SourceSpan id_span = cur().span;
             consume();
 
             if (allow_struct_lit && at(TokenKind::LBrace)) {
                 consume();
-                auto n  = std::make_unique<StructLitExpr>();
-                n->name = name;
+                StructLitExpr n;
+                n.name = name;
                 while (!at(TokenKind::RBrace) && !at_end()) {
                     if (!at(TokenKind::Identifier)) error("expected field name");
                     std::string fname = cur().lexeme;
                     consume();
                     expect(TokenKind::Colon, "':'");
-                    auto val = parse_expr();
-                    n->fields.emplace_back(fname, std::move(val));
+                    ExprId val = parse_expr();
+                    n.fields.emplace_back(fname, val);
                     if (!try_eat(TokenKind::Comma)) break;
                 }
-                n->span = {id_span.begin, cur().span.end};
+                n.span = {id_span.begin, cur().span.end};
                 expect(TokenKind::RBrace, "'}'");
-                return n;
+                return prog_.add_expr(std::move(n));
             }
 
-            auto n  = std::make_unique<IdentExpr>();
-            n->span = id_span;
-            n->name = name;
-            return n;
+            IdentExpr n;
+            n.span = id_span;
+            n.name = name;
+            return prog_.add_expr(std::move(n));
         }
 
         error("unexpected token '" + cur().lexeme + "' in expression");
     }
 
-    ExprPtr parse_cond_expr() {
-        ExprPtr left = parse_cond_unary();
+    ExprId parse_cond_expr() {
+        ExprId left = parse_cond_unary();
         while (true) {
             auto [prec, right_assoc] = infix(cur().kind);
             if (prec <= 0) break;
             if (cur().kind == TokenKind::Assign) break;
             if (cur().kind == TokenKind::AsKw) {
+                SourcePos left_begin = expr_span(prog_.expr(left)).begin;
                 consume();
-                TypePtr tgt = parse_type();
-                auto node     = std::make_unique<CastExpr>();
-                node->span    = {left->span.begin, tgt->span.end};
-                node->operand = std::move(left);
-                node->target  = std::move(tgt);
-                left = std::move(node);
+                TypeId tgt_id   = parse_type();
+                SourcePos t_end = type_span(prog_.type(tgt_id)).end;
+                CastExpr node;
+                node.span    = {left_begin, t_end};
+                node.operand = left;
+                node.target  = tgt_id;
+                left = prog_.add_expr(std::move(node));
                 continue;
             }
+            SourcePos left_begin = expr_span(prog_.expr(left)).begin;
             std::string op = cur().lexeme;
             consume();
             int next_min = right_assoc ? prec - 1 : prec;
-            auto rhs = parse_cond_expr_at(next_min);
-            auto node  = std::make_unique<BinaryExpr>();
-            node->span = {left->span.begin, rhs->span.end};
-            node->op   = op;
-            node->left = std::move(left);
-            node->right= std::move(rhs);
-            left = std::move(node);
+            ExprId rhs = parse_cond_expr_at(next_min);
+            SourcePos rhs_end = expr_span(prog_.expr(rhs)).end;
+            BinaryExpr node;
+            node.span  = {left_begin, rhs_end};
+            node.op    = op;
+            node.left  = left;
+            node.right = rhs;
+            left = prog_.add_expr(std::move(node));
         }
         return left;
     }
 
-    ExprPtr parse_cond_expr_at(int min_prec) {
-        ExprPtr left = parse_cond_unary();
+    ExprId parse_cond_expr_at(int min_prec) {
+        ExprId left = parse_cond_unary();
         while (true) {
             auto [prec, right_assoc] = infix(cur().kind);
             if (prec <= min_prec) break;
             if (cur().kind == TokenKind::Assign) break;
             if (cur().kind == TokenKind::AsKw) {
+                SourcePos left_begin = expr_span(prog_.expr(left)).begin;
                 consume();
-                TypePtr tgt = parse_type();
-                auto node     = std::make_unique<CastExpr>();
-                node->span    = {left->span.begin, tgt->span.end};
-                node->operand = std::move(left);
-                node->target  = std::move(tgt);
-                left = std::move(node);
+                TypeId tgt_id   = parse_type();
+                SourcePos t_end = type_span(prog_.type(tgt_id)).end;
+                CastExpr node;
+                node.span    = {left_begin, t_end};
+                node.operand = left;
+                node.target  = tgt_id;
+                left = prog_.add_expr(std::move(node));
                 continue;
             }
+            SourcePos left_begin = expr_span(prog_.expr(left)).begin;
             std::string op = cur().lexeme;
             consume();
             int next_min = right_assoc ? prec - 1 : prec;
-            auto rhs  = parse_cond_expr_at(next_min);
-            auto node = std::make_unique<BinaryExpr>();
-            node->span= {left->span.begin, rhs->span.end};
-            node->op  = op;
-            node->left= std::move(left);
-            node->right=std::move(rhs);
-            left = std::move(node);
+            ExprId rhs = parse_cond_expr_at(next_min);
+            SourcePos rhs_end = expr_span(prog_.expr(rhs)).end;
+            BinaryExpr node;
+            node.span  = {left_begin, rhs_end};
+            node.op    = op;
+            node.left  = left;
+            node.right = rhs;
+            left = prog_.add_expr(std::move(node));
         }
         return left;
     }
 
-    ExprPtr parse_cond_unary() {
+    ExprId parse_cond_unary() {
         if (at(TokenKind::Minus) || at(TokenKind::Bang)) {
             SourcePos s = cur().span.begin;
             std::string op = cur().lexeme;
             consume();
-            auto operand = parse_cond_unary();
-            auto n       = std::make_unique<UnaryExpr>();
-            n->span      = {s, operand->span.end};
-            n->op        = op;
-            n->operand   = std::move(operand);
-            return n;
+            ExprId operand = parse_cond_unary();
+            SourcePos op_end = expr_span(prog_.expr(operand)).end;
+            UnaryExpr n;
+            n.span    = {s, op_end};
+            n.op      = op;
+            n.operand = operand;
+            return prog_.add_expr(std::move(n));
         }
         return parse_postfix(parse_primary(false));
     }
 
-    StmtPtr parse_stmt() {
+    StmtId parse_stmt() {
         SourcePos start = cur().span.begin;
 
         if (at(TokenKind::Semicolon)) {
             consume();
-            auto n  = std::make_unique<NullStmt>();
-            n->span = {start, cur().span.begin};
-            return n;
+            NullStmt n;
+            n.span = {start, cur().span.begin};
+            return prog_.add_stmt(std::move(n));
         }
 
         if (at(TokenKind::LBrace))  return parse_block();
@@ -504,50 +488,50 @@ private:
 
         if (at(TokenKind::ReturnKw)) {
             consume();
-            auto n = std::make_unique<ReturnStmt>();
-            n->span.begin = start;
-            if (!at(TokenKind::Semicolon)) n->value = parse_expr();
-            n->span.end = cur().span.begin;
+            ReturnStmt n;
+            n.span.begin = start;
+            if (!at(TokenKind::Semicolon)) n.value = parse_expr();
+            n.span.end = cur().span.begin;
             expect(TokenKind::Semicolon, "';'");
-            return n;
+            return prog_.add_stmt(std::move(n));
         }
 
         if (at(TokenKind::BreakKw)) {
             consume();
             expect(TokenKind::Semicolon, "';'");
-            auto n  = std::make_unique<BreakStmt>();
-            n->span = {start, cur().span.begin};
-            return n;
+            BreakStmt n;
+            n.span = {start, cur().span.begin};
+            return prog_.add_stmt(std::move(n));
         }
 
         if (at(TokenKind::ContinueKw)) {
             consume();
             expect(TokenKind::Semicolon, "';'");
-            auto n  = std::make_unique<ContinueStmt>();
-            n->span = {start, cur().span.begin};
-            return n;
+            ContinueStmt n;
+            n.span = {start, cur().span.begin};
+            return prog_.add_stmt(std::move(n));
         }
 
-        auto e  = parse_expr();
-        auto es = std::make_unique<ExprStmt>();
-        es->span= {start, cur().span.begin};
-        es->expr= std::move(e);
+        ExprId e = parse_expr();
+        ExprStmt es;
+        es.span = {start, cur().span.begin};
+        es.expr = e;
         expect(TokenKind::Semicolon, "';'");
-        return es;
+        return prog_.add_stmt(std::move(es));
     }
 
-    std::unique_ptr<BlockStmt> parse_block() {
+    StmtId parse_block() {
         SourcePos start = cur().span.begin;
         expect(TokenKind::LBrace, "'{'");
-        auto blk = std::make_unique<BlockStmt>();
+        BlockStmt blk;
         while (!at(TokenKind::RBrace) && !at_end())
-            blk->stmts.push_back(parse_stmt());
-        blk->span = {start, cur().span.end};
+            blk.stmts.push_back(parse_stmt());
+        blk.span = {start, cur().span.end};
         expect(TokenKind::RBrace, "'}'");
-        return blk;
+        return prog_.add_stmt(std::move(blk));
     }
 
-    StmtPtr parse_var_decl() {
+    StmtId parse_var_decl() {
         SourcePos start = cur().span.begin;
         consume();
         bool is_mut = try_eat(TokenKind::MutKw);
@@ -555,56 +539,55 @@ private:
         std::string name = cur().lexeme;
         consume();
 
-        std::optional<TypePtr> type_ann;
+        std::optional<TypeId> type_ann;
         if (try_eat(TokenKind::Colon)) type_ann = parse_type();
 
         expect(TokenKind::Assign, "'='");
-        auto init = parse_expr();
+        ExprId init = parse_expr();
         expect(TokenKind::Semicolon, "';'");
 
-        auto n      = std::make_unique<VarDeclStmt>();
-        n->span     = {start, cur().span.begin};
-        n->is_mut   = is_mut;
-        n->name     = name;
-        n->type_ann = std::move(type_ann);
-        n->init     = std::move(init);
-        return n;
+        VarDeclStmt n;
+        n.span     = {start, cur().span.begin};
+        n.is_mut   = is_mut;
+        n.name     = name;
+        n.type_ann = type_ann;
+        n.init     = init;
+        return prog_.add_stmt(std::move(n));
     }
 
-    StmtPtr parse_if() {
+    StmtId parse_if() {
         SourcePos start = cur().span.begin;
         consume();
-        auto cond       = parse_cond_expr();
-        auto then_block = parse_block();
-        auto n          = std::make_unique<IfStmt>();
-        n->span.begin   = start;
-        n->cond         = std::move(cond);
-        n->then_block   = std::move(then_block);
+        ExprId cond       = parse_cond_expr();
+        StmtId then_block = parse_block();
+        IfStmt n;
+        n.span.begin = start;
+        n.cond       = cond;
+        n.then_block = then_block;
 
         if (try_eat(TokenKind::ElseKw)) {
-            if (at(TokenKind::IfKw)) {
-                n->else_stmt = parse_if();
-            } else {
-                n->else_stmt = parse_block();
-            }
+            if (at(TokenKind::IfKw))
+                n.else_stmt = parse_if();
+            else
+                n.else_stmt = parse_block();
         }
-        n->span.end = cur().span.begin;
-        return n;
+        n.span.end = cur().span.begin;
+        return prog_.add_stmt(std::move(n));
     }
 
-    StmtPtr parse_while() {
+    StmtId parse_while() {
         SourcePos start = cur().span.begin;
         consume();
-        auto cond = parse_cond_expr();
-        auto body = parse_block();
-        auto n    = std::make_unique<WhileStmt>();
-        n->span   = {start, cur().span.begin};
-        n->cond   = std::move(cond);
-        n->body   = std::move(body);
-        return n;
+        ExprId cond  = parse_cond_expr();
+        StmtId body  = parse_block();
+        WhileStmt n;
+        n.span = {start, cur().span.begin};
+        n.cond = cond;
+        n.body = body;
+        return prog_.add_stmt(std::move(n));
     }
 
-    DeclPtr parse_decl() {
+    DeclId parse_decl() {
         if (at(TokenKind::FnKw))        return parse_fn_decl("");
         if (at(TokenKind::StructKw))    return parse_struct_decl();
         if (at(TokenKind::TypeKw))      return parse_type_alias();
@@ -613,7 +596,7 @@ private:
         error("expected declaration (fn, struct, type, namespace, impl)");
     }
 
-    std::unique_ptr<FnDecl> parse_fn_decl(const std::string& ns_prefix) {
+    DeclId parse_fn_decl(const std::string& ns_prefix) {
         SourcePos start = cur().span.begin;
         expect(TokenKind::FnKw, "'fn'");
         if (!at(TokenKind::Identifier)) error("expected function name");
@@ -630,28 +613,27 @@ private:
             consume();
             expect(TokenKind::Colon, "':'");
             p.type     = parse_type();
-            p.span.end = p.type->span.end;
+            p.span.end = type_span(prog_.type(p.type)).end;
             params.push_back(std::move(p));
             if (!try_eat(TokenKind::Comma)) break;
         }
         expect(TokenKind::RParen, "')'");
+        std::optional<TypeId> ret_type;
+        if (try_eat(TokenKind::Colon))
+            ret_type = parse_type();
+        StmtId body = parse_block();
 
-        std::optional<TypePtr> ret_type;
-        if (try_eat(TokenKind::Arrow)) ret_type = parse_type();
-
-        auto body = parse_block();
-
-        auto fn            = std::make_unique<FnDecl>();
-        fn->span           = {start, cur().span.begin};
-        fn->name           = name;
-        fn->params         = std::move(params);
-        fn->return_type    = std::move(ret_type);
-        fn->body           = std::move(body);
-        fn->mangled_name   = ns_prefix.empty() ? name : ns_prefix + "__" + name;
-        return fn;
+        FnDecl fn;
+        fn.span         = {start, cur().span.begin};
+        fn.name         = name;
+        fn.params       = std::move(params);
+        fn.return_type  = ret_type;
+        fn.body         = body;
+        fn.mangled_name = ns_prefix.empty() ? name : ns_prefix + "__" + name;
+        return prog_.add_decl(std::move(fn));
     }
 
-    DeclPtr parse_struct_decl() {
+    DeclId parse_struct_decl() {
         SourcePos start = cur().span.begin;
         expect(TokenKind::StructKw, "'struct'");
         if (!at(TokenKind::Identifier)) error("expected struct name");
@@ -668,96 +650,93 @@ private:
             consume();
             expect(TokenKind::Colon, "':'");
             f.type     = parse_type();
-            f.span.end = f.type->span.end;
+            f.span.end = type_span(prog_.type(f.type)).end;
             fields.push_back(std::move(f));
             if (!try_eat(TokenKind::Comma)) break;
         }
         expect(TokenKind::RBrace, "'}'");
 
-        auto sd    = std::make_unique<StructDecl>();
-        sd->span   = {start, cur().span.begin};
-        sd->name   = name;
-        sd->fields = std::move(fields);
-        return sd;
+        StructDecl sd;
+        sd.span   = {start, cur().span.begin};
+        sd.name   = name;
+        sd.fields = std::move(fields);
+        return prog_.add_decl(std::move(sd));
     }
 
-    DeclPtr parse_type_alias() {
+    DeclId parse_type_alias() {
         SourcePos start = cur().span.begin;
         expect(TokenKind::TypeKw, "'type'");
         if (!at(TokenKind::Identifier)) error("expected alias name");
         std::string name = cur().lexeme;
         consume();
         expect(TokenKind::Assign, "'='");
-        auto type = parse_type();
+        TypeId type_id = parse_type();
         expect(TokenKind::Semicolon, "';'");
-        auto ta    = std::make_unique<TypeAliasDecl>();
-        ta->span   = {start, cur().span.begin};
-        ta->name   = name;
-        ta->type   = std::move(type);
-        return ta;
+        TypeAliasDecl ta;
+        ta.span = {start, cur().span.begin};
+        ta.name = name;
+        ta.type = type_id;
+        return prog_.add_decl(std::move(ta));
     }
 
-    DeclPtr parse_namespace() {
+    DeclId parse_namespace() {
         SourcePos start = cur().span.begin;
         expect(TokenKind::NamespaceKw, "'namespace'");
         if (!at(TokenKind::Identifier)) error("expected namespace name");
         std::string name = cur().lexeme;
         consume();
         expect(TokenKind::LBrace, "'{'");
-        auto nd  = std::make_unique<NamespaceDecl>();
-        nd->name = name;
+        NamespaceDecl nd;
+        nd.name = name;
         while (!at(TokenKind::RBrace) && !at_end()) {
-            if (at(TokenKind::FnKw)) {
-                nd->decls.push_back(parse_fn_decl(name));
-            } else {
-                nd->decls.push_back(parse_decl());
-            }
+            if (at(TokenKind::FnKw))
+                nd.decls.push_back(parse_fn_decl(name));
+            else
+                nd.decls.push_back(parse_decl());
         }
-        nd->span = {start, cur().span.end};
+        nd.span = {start, cur().span.end};
         expect(TokenKind::RBrace, "'}'");
-        return nd;
+        return prog_.add_decl(std::move(nd));
     }
 
-    DeclPtr parse_impl() {
+    DeclId parse_impl() {
         SourcePos start = cur().span.begin;
         expect(TokenKind::ImplKw, "'impl'");
         if (!at(TokenKind::Identifier)) error("expected struct name after 'impl'");
         std::string sname = cur().lexeme;
         consume();
         expect(TokenKind::LBrace, "'{'");
-        auto impl = std::make_unique<ImplDecl>();
-        impl->struct_name = sname;
+        ImplDecl impl;
+        impl.struct_name = sname;
         while (!at(TokenKind::RBrace) && !at_end()) {
             if (!at(TokenKind::FnKw)) error("expected 'fn' inside impl block");
-            impl->methods.push_back(parse_fn_decl(sname));
+            impl.methods.push_back(parse_fn_decl(sname));
         }
-        impl->span = {start, cur().span.end};
+        impl.span = {start, cur().span.end};
         expect(TokenKind::RBrace, "'}'");
-        return impl;
+        return prog_.add_decl(std::move(impl));
     }
 
 public:
-    std::unique_ptr<Program> parse_program() {
-        auto prog = std::make_unique<Program>();
-        while (!at_end()) prog->decls.push_back(parse_decl());
-        return prog;
+    void parse_program() {
+        while (!at_end())
+            prog_.top_decls.push_back(parse_decl());
     }
 
     const std::vector<Token>& tokens_;
     const std::string&        filename_;
+    Program&                  prog_;
     std::size_t               pos_ = 0;
 };
 
 ParseResult parse(const std::vector<Token>& tokens, const std::string& filename) {
-    P parser(tokens, filename);
+    ParseResult r;
+    P parser(tokens, filename, r.program);
     try {
-        auto prog  = parser.parse_program();
-        ParseResult r;
-        r.ok       = true;
-        r.program  = std::move(prog);
+        parser.parse_program();
+        r.ok = true;
         return r;
     } catch (const ParseError& e) {
-        ParseResult r;
         r.ok    = false;
         r.error = e;
         return r;

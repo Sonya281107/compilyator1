@@ -49,8 +49,6 @@ std::string_view token_kind_name(TokenKind kind) {
         case TokenKind::Semicolon:    return ";";
         case TokenKind::Colon:        return ":";
         case TokenKind::ColonColon:   return "::";
-        case TokenKind::Dot:          return ".";
-        case TokenKind::Arrow:        return "->";
         case TokenKind::Plus:         return "+";
         case TokenKind::Minus:        return "-";
         case TokenKind::Star:         return "*";
