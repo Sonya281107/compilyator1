@@ -1,0 +1,24 @@
+{
+  "revision": 0,
+  "rules": [
+    {
+      "primary-output": "CMakeFiles/ryc.dir/semantic.cppm.o",
+      "provides": [
+        {
+          "is-interface": true,
+          "logical-name": "semantic",
+          "source-path": "/home/sudya/compilyator/semantic.cppm"
+        }
+      ],
+      "requires": [
+        {
+          "logical-name": "parser"
+        },
+        {
+          "logical-name": "lexer"
+        }
+      ]
+    }
+  ],
+  "version": 1
+}

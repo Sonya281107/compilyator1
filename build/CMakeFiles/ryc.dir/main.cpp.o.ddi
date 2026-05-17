@@ -1,0 +1,23 @@
+{
+  "revision": 0,
+  "rules": [
+    {
+      "primary-output": "CMakeFiles/ryc.dir/main.cpp.o",
+      "requires": [
+        {
+          "logical-name": "lexer"
+        },
+        {
+          "logical-name": "parser"
+        },
+        {
+          "logical-name": "semantic"
+        },
+        {
+          "logical-name": "codegen"
+        }
+      ]
+    }
+  ],
+  "version": 1
+}

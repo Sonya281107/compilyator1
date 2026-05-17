@@ -1,0 +1,32 @@
+[
+{
+  "directory": "/home/sudya/compilyator/build",
+  "command": "/usr/local/bin/clang++ -std=gnu++23 -Wall -Wextra -Wpedantic -stdlib=libc++ @CMakeFiles/ryc.dir/main.cpp.o.modmap -o CMakeFiles/ryc.dir/main.cpp.o -c /home/sudya/compilyator/main.cpp",
+  "file": "/home/sudya/compilyator/main.cpp",
+  "output": "/home/sudya/compilyator/build/CMakeFiles/ryc.dir/main.cpp.o"
+},
+{
+  "directory": "/home/sudya/compilyator/build",
+  "command": "/usr/local/bin/clang++ -std=gnu++23 -Wall -Wextra -Wpedantic -stdlib=libc++ @CMakeFiles/ryc.dir/lexer.cppm.o.modmap -o CMakeFiles/ryc.dir/lexer.cppm.o -c /home/sudya/compilyator/lexer.cppm",
+  "file": "/home/sudya/compilyator/lexer.cppm",
+  "output": "/home/sudya/compilyator/build/CMakeFiles/ryc.dir/lexer.cppm.o"
+},
+{
+  "directory": "/home/sudya/compilyator/build",
+  "command": "/usr/local/bin/clang++ -std=gnu++23 -Wall -Wextra -Wpedantic -stdlib=libc++ @CMakeFiles/ryc.dir/parser.cppm.o.modmap -o CMakeFiles/ryc.dir/parser.cppm.o -c /home/sudya/compilyator/parser.cppm",
+  "file": "/home/sudya/compilyator/parser.cppm",
+  "output": "/home/sudya/compilyator/build/CMakeFiles/ryc.dir/parser.cppm.o"
+},
+{
+  "directory": "/home/sudya/compilyator/build",
+  "command": "/usr/local/bin/clang++ -std=gnu++23 -Wall -Wextra -Wpedantic -stdlib=libc++ @CMakeFiles/ryc.dir/semantic.cppm.o.modmap -o CMakeFiles/ryc.dir/semantic.cppm.o -c /home/sudya/compilyator/semantic.cppm",
+  "file": "/home/sudya/compilyator/semantic.cppm",
+  "output": "/home/sudya/compilyator/build/CMakeFiles/ryc.dir/semantic.cppm.o"
+},
+{
+  "directory": "/home/sudya/compilyator/build",
+  "command": "/usr/local/bin/clang++ -std=gnu++23 -Wall -Wextra -Wpedantic -stdlib=libc++ @CMakeFiles/ryc.dir/codegen.cppm.o.modmap -o CMakeFiles/ryc.dir/codegen.cppm.o -c /home/sudya/compilyator/codegen.cppm",
+  "file": "/home/sudya/compilyator/codegen.cppm",
+  "output": "/home/sudya/compilyator/build/CMakeFiles/ryc.dir/codegen.cppm.o"
+}
+]

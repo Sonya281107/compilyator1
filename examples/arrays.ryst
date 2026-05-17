@@ -1,0 +1,23 @@
+
+fn sum(arr: [i64; 5]) -> i64 {
+    let mut total: i64 = 0;
+    let mut i: i64 = 0;
+    while i < 5 {
+        total = total + arr[i];
+        i = i + 1;
+    }
+    return total;
+}
+
+fn main() {
+    let nums: [i64; 5] = [10, 20, 30, 40, 50];
+    print(sum(nums));   // 150
+
+    // type inference works for arrays too
+    let flags = [true, false, true, true, false];
+    let mut i: i64 = 0;
+    while i < 5 {
+        print(flags[i]);
+        i = i + 1;
+    }
+}

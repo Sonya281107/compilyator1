@@ -1,0 +1,16 @@
+{
+  "revision": 0,
+  "rules": [
+    {
+      "primary-output": "CMakeFiles/ryc.dir/lexer.cppm.o",
+      "provides": [
+        {
+          "is-interface": true,
+          "logical-name": "lexer",
+          "source-path": "/home/sudya/compilyator/lexer.cppm"
+        }
+      ]
+    }
+  ],
+  "version": 1
+}

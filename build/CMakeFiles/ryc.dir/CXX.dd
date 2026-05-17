@@ -1,0 +1,15 @@
+ninja_dyndep_version = 1.0
+build CMakeFiles/ryc.dir/main.cpp.o: dyndep | CMakeFiles/ryc.dir/lexer.pcm CMakeFiles/ryc.dir/parser.pcm CMakeFiles/ryc.dir/semantic.pcm CMakeFiles/ryc.dir/codegen.pcm
+
+build CMakeFiles/ryc.dir/lexer.cppm.o | CMakeFiles/ryc.dir/lexer.pcm: dyndep
+  restat = 1
+
+build CMakeFiles/ryc.dir/parser.cppm.o | CMakeFiles/ryc.dir/parser.pcm: dyndep | CMakeFiles/ryc.dir/lexer.pcm
+  restat = 1
+
+build CMakeFiles/ryc.dir/semantic.cppm.o | CMakeFiles/ryc.dir/semantic.pcm: dyndep | CMakeFiles/ryc.dir/parser.pcm CMakeFiles/ryc.dir/lexer.pcm
+  restat = 1
+
+build CMakeFiles/ryc.dir/codegen.cppm.o | CMakeFiles/ryc.dir/codegen.pcm: dyndep | CMakeFiles/ryc.dir/parser.pcm CMakeFiles/ryc.dir/lexer.pcm
+  restat = 1
+

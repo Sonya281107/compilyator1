@@ -1,0 +1,19 @@
+
+fn abs(x: i64) -> i64 {
+    if x < 0 {
+        return -x;
+    }
+    return x;
+}
+
+fn abs(x: f64) -> f64 {
+    if x < 0.0 {
+        return -x;
+    }
+    return x;
+}
+
+fn main() {
+    print(abs(-42));      // calls abs__i64 → 42
+    print(abs(-3.14));    // calls abs__f64 → 3.14
+}

@@ -1,0 +1,30 @@
+
+struct Point {
+    x: f64,
+    y: f64
+}
+
+fn point_len_sq(x: f64, y: f64) -> f64 {
+    return x * x + y * y;
+}
+
+fn rect_area(w: f64, h: f64) -> f64 {
+    return w * h;
+}
+
+fn main() {
+    let p: Point = Point { x: 3.0, y: 4.0 };
+    print(p.x);
+    print(p.y);
+
+    let len_sq = point_len_sq(p.x, p.y);
+    print(len_sq);   // 25.0
+
+    let mut q: Point = Point { x: 0.0, y: 0.0 };
+    q.x = p.x * 2.0;
+    q.y = p.y * 2.0;
+    print(q.x);      // 6.0
+    print(q.y);      // 8.0
+
+    print(rect_area(5.0, 2.5));  // 12.5
+}

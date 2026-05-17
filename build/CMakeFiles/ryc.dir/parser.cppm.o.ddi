@@ -1,0 +1,21 @@
+{
+  "revision": 0,
+  "rules": [
+    {
+      "primary-output": "CMakeFiles/ryc.dir/parser.cppm.o",
+      "provides": [
+        {
+          "is-interface": true,
+          "logical-name": "parser",
+          "source-path": "/home/sudya/compilyator/parser.cppm"
+        }
+      ],
+      "requires": [
+        {
+          "logical-name": "lexer"
+        }
+      ]
+    }
+  ],
+  "version": 1
+}

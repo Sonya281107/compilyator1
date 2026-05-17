@@ -1,0 +1,4 @@
+/home/sudya/compilyator/build/CMakeFiles/ryc.dir
+/home/sudya/compilyator/build/CMakeFiles/run.dir
+/home/sudya/compilyator/build/CMakeFiles/edit_cache.dir
+/home/sudya/compilyator/build/CMakeFiles/rebuild_cache.dir

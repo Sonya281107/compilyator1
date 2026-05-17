@@ -1,0 +1,3 @@
+-x c++-module
+-fmodule-output="CMakeFiles/ryc.dir/parser.pcm"
+-fmodule-file="lexer=CMakeFiles/ryc.dir/lexer.pcm"

@@ -1,0 +1,24 @@
+{
+  "revision": 0,
+  "rules": [
+    {
+      "primary-output": "CMakeFiles/ryc.dir/codegen.cppm.o",
+      "provides": [
+        {
+          "is-interface": true,
+          "logical-name": "codegen",
+          "source-path": "/home/sudya/compilyator/codegen.cppm"
+        }
+      ],
+      "requires": [
+        {
+          "logical-name": "parser"
+        },
+        {
+          "logical-name": "lexer"
+        }
+      ]
+    }
+  ],
+  "version": 1
+}

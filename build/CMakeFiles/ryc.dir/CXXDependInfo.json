@@ -1,0 +1,121 @@
+{
+	"bmi-installation" : null,
+	"compiler-frontend-variant" : "GNU",
+	"compiler-id" : "Clang",
+	"compiler-simulate-id" : "",
+	"config" : "",
+	"cxx-modules" : 
+	{
+		"CMakeFiles/ryc.dir/codegen.cppm.o" : 
+		{
+			"bmi-only" : false,
+			"compile-features" : 
+			[
+				"cxx_std_23"
+			],
+			"compile-options" : 
+			[
+				"-Wall",
+				"-Wextra",
+				"-Wpedantic",
+				"-stdlib=libc++"
+			],
+			"definitions" : [],
+			"destination" : null,
+			"include-directories" : [],
+			"name" : "CXX_MODULES",
+			"relative-directory" : "",
+			"source" : "/home/sudya/compilyator/codegen.cppm",
+			"type" : "CXX_MODULES",
+			"visibility" : "PRIVATE"
+		},
+		"CMakeFiles/ryc.dir/lexer.cppm.o" : 
+		{
+			"bmi-only" : false,
+			"compile-features" : 
+			[
+				"cxx_std_23"
+			],
+			"compile-options" : 
+			[
+				"-Wall",
+				"-Wextra",
+				"-Wpedantic",
+				"-stdlib=libc++"
+			],
+			"definitions" : [],
+			"destination" : null,
+			"include-directories" : [],
+			"name" : "CXX_MODULES",
+			"relative-directory" : "",
+			"source" : "/home/sudya/compilyator/lexer.cppm",
+			"type" : "CXX_MODULES",
+			"visibility" : "PRIVATE"
+		},
+		"CMakeFiles/ryc.dir/parser.cppm.o" : 
+		{
+			"bmi-only" : false,
+			"compile-features" : 
+			[
+				"cxx_std_23"
+			],
+			"compile-options" : 
+			[
+				"-Wall",
+				"-Wextra",
+				"-Wpedantic",
+				"-stdlib=libc++"
+			],
+			"definitions" : [],
+			"destination" : null,
+			"include-directories" : [],
+			"name" : "CXX_MODULES",
+			"relative-directory" : "",
+			"source" : "/home/sudya/compilyator/parser.cppm",
+			"type" : "CXX_MODULES",
+			"visibility" : "PRIVATE"
+		},
+		"CMakeFiles/ryc.dir/semantic.cppm.o" : 
+		{
+			"bmi-only" : false,
+			"compile-features" : 
+			[
+				"cxx_std_23"
+			],
+			"compile-options" : 
+			[
+				"-Wall",
+				"-Wextra",
+				"-Wpedantic",
+				"-stdlib=libc++"
+			],
+			"definitions" : [],
+			"destination" : null,
+			"include-directories" : [],
+			"name" : "CXX_MODULES",
+			"relative-directory" : "",
+			"source" : "/home/sudya/compilyator/semantic.cppm",
+			"type" : "CXX_MODULES",
+			"visibility" : "PRIVATE"
+		}
+	},
+	"database-info" : null,
+	"dir-cur-bld" : "/home/sudya/compilyator/build",
+	"dir-cur-src" : "/home/sudya/compilyator",
+	"dir-top-bld" : "/home/sudya/compilyator/build",
+	"dir-top-src" : "/home/sudya/compilyator",
+	"exports" : [],
+	"forward-modules-from-target-dirs" : [],
+	"include-dirs" : [],
+	"language" : "CXX",
+	"linked-target-dirs" : [],
+	"module-dir" : "/home/sudya/compilyator/build/CMakeFiles/ryc.dir",
+	"sources" : 
+	{
+		"CMakeFiles/ryc.dir/main.cpp.o" : 
+		{
+			"language" : "CXX",
+			"source" : "/home/sudya/compilyator/main.cpp"
+		}
+	}
+}

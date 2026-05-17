@@ -1,0 +1,65 @@
+{
+	"modules" : 
+	{
+		"codegen" : 
+		{
+			"bmi" : "/home/sudya/compilyator/build/CMakeFiles/ryc.dir/codegen.pcm",
+			"is-private" : true
+		},
+		"lexer" : 
+		{
+			"bmi" : "/home/sudya/compilyator/build/CMakeFiles/ryc.dir/lexer.pcm",
+			"is-private" : true
+		},
+		"parser" : 
+		{
+			"bmi" : "/home/sudya/compilyator/build/CMakeFiles/ryc.dir/parser.pcm",
+			"is-private" : true
+		},
+		"semantic" : 
+		{
+			"bmi" : "/home/sudya/compilyator/build/CMakeFiles/ryc.dir/semantic.pcm",
+			"is-private" : true
+		}
+	},
+	"references" : 
+	{
+		"codegen" : 
+		{
+			"lookup-method" : "by-name",
+			"path" : "CMakeFiles/ryc.dir/codegen.pcm"
+		},
+		"lexer" : 
+		{
+			"lookup-method" : "by-name",
+			"path" : "CMakeFiles/ryc.dir/lexer.pcm"
+		},
+		"parser" : 
+		{
+			"lookup-method" : "by-name",
+			"path" : "CMakeFiles/ryc.dir/parser.pcm"
+		},
+		"semantic" : 
+		{
+			"lookup-method" : "by-name",
+			"path" : "CMakeFiles/ryc.dir/semantic.pcm"
+		}
+	},
+	"usages" : 
+	{
+		"codegen" : 
+		[
+			"lexer",
+			"parser"
+		],
+		"parser" : 
+		[
+			"lexer"
+		],
+		"semantic" : 
+		[
+			"lexer",
+			"parser"
+		]
+	}
+}

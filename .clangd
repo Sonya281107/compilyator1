@@ -1,0 +1,8 @@
+CompileFlags:
+  Add:
+    - -stdlib=libc++
+    - -std=c++23
+  Compiler: clang++
+
+Index:
+  Background: Build
