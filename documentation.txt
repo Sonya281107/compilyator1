@@ -278,3 +278,35 @@ C-подобным синтаксисом и рядом более строги�
 добавить простые структуры и массивы 
 лексер и парсер быстро реализовать 
 потом семантику и интерпретатор 
+
+cd /home/sudya/compilyator
+cmake --build build
+
+
+Простая компиляция
+build/ryc examples/hello.ryst 
+build/ryc examples/fibonacci.ryst 
+build/ryc examples/arrays.ryst 
+build/ryc examples/structs.ryst 
+build/ryc examples/overloading.ryst 
+
+# Свой файл
+build/ryc мой_файл.ryst -o /tmp/prog && /tmp/prog
+
+# Отладка
+build/ryc мой_файл.ryst --dump-tokens   # токены
+build/ryc мой_файл.ryst --dump-ast      # дерево разбора
+Запустить результат
+./myprogram
+
+Вспомогательные флаги для отладки:
+Показать токены (лексер)
+./build/ryc myfile.ryst --dump-tokens
+
+Показать AST (парсер)
+./build/ryc myfile.ryst --dump-ast
+
+Пример:
+./build/ryc examples/hello.ryst -o hello
+./hello
+# Hello, World!

@@ -1,0 +1,45 @@
+fn isPrime(n: i64) -> bool {
+    if n < 2 {
+        return false;
+    }
+    let mut i: i64 = 2;
+    while i * i <= n {
+        if n % i == 0 {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn classifyNumber(n: i64) -> void {
+    let even: bool = n % 2 == 0;
+    let prime: bool = isPrime(n);
+    if even && n > 100 {
+        print("BigEven");
+    } else if even && n >= 10 && n <= 100 {
+        print("MediumEven");
+    } else if even && n < 10 {
+        print("SmallEven");
+    } else if !even && n >= 100 && n <= 999 {
+        print("OddThreeDigit");
+    } else if !even && n < 0 {
+        print("NegativeOdd");
+    } else if !even && prime {
+        print("PrimeOdd");
+    } else {
+        print("Other");
+    }
+}
+
+fn main() -> void {
+    classifyNumber(200);
+    classifyNumber(50);
+    classifyNumber(100);
+    classifyNumber(4);
+    classifyNumber(555);
+    classifyNumber(-7);
+    classifyNumber(7);
+    classifyNumber(9);
+    classifyNumber(1);
+}

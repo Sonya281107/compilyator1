@@ -1,0 +1,39 @@
+// Последовательность Коллатца:
+// если n чётное → n / 2, иначе → 3*n + 1, пока не достигнем 1.
+
+fn collatz_len(start: i64) -> i64 {
+    let mut n: i64 = start;
+    let mut steps: i64 = 0;
+    while n != 1 {
+        if n % 2 == 0 {
+            n = n / 2;
+        } else {
+            n = n * 3 + 1;
+        }
+        steps = steps + 1;
+    }
+    return steps;
+}
+
+fn print_collatz(start: i64) {
+    let mut n: i64 = start;
+    print(n);
+    while n != 1 {
+        if n % 2 == 0 {
+            n = n / 2;
+        } else {
+            n = n * 3 + 1;
+        }
+        print(n);
+    }
+}
+
+fn main() {
+    // Длина последовательности для нескольких чисел
+    print(collatz_len(6));    // 8
+    print(collatz_len(27));   // 111
+    print(collatz_len(100));  // 25
+
+    // Напечатать полную последовательность для числа 6
+    print_collatz(6);         // 6 3 10 5 16 8 4 2 1
+}

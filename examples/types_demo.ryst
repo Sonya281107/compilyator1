@@ -1,0 +1,46 @@
+// Демонстрация числовых типов, суффиксов и литералов (A.1.1)
+
+fn main() {
+    // Шестнадцатеричные литералы
+    let red: u8   = 0xFFu8;
+    let green: u8 = 0x80u8;
+    let blue: u8  = 0x00u8;
+    print(red as i64);      // 255
+    print(green as i64);    // 128
+    print(blue as i64);     // 0
+
+    // Двоичные литералы
+    let flags: u8  = 0b10110100u8;
+    let mask: u8   = 0b00001111u8;
+    print(flags as i64);    // 180
+    print(mask as i64);     // 15
+
+    // Суффиксы целых типов
+    let a: i8  = 127i8;
+    let b: i16 = 32767i16;
+    let c: i32 = 2147483647i32;
+    let d: i64 = 9223372036854775807i64;
+    print(a as i64);
+    print(b as i64);
+    print(c as i64);
+    print(d);
+
+    // Беззнаковые
+    let ua: u8  = 255u8;
+    let ub: u16 = 65535u16;
+    let uc: u32 = 4294967295u32;
+    print(ua as i64);
+    print(ub as i64);
+    print(uc as i64);
+
+    // Суффиксы вещественных типов
+    let f32val: f32 = 3.14159f32;
+    let f64val: f64 = 2.718281828f64;
+    print(f32val as f64);
+    print(f64val);
+
+    // Явный суффикс не позволяет неявное приведение
+    // let wrong: i64 = 42i32;  // ошибка компиляции
+    let right: i32 = 42i32;
+    print(right as i64);    // 42
+}

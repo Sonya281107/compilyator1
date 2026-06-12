@@ -1,0 +1,52 @@
+// 1 = X, 2 = O, 0 = empty
+
+fn checkWinner(board: [i64; 9]) -> i64 {
+    let mut row: i64 = 0;
+    while row < 3 {
+        let base: i64 = row * 3;
+        if board[base] != 0 && board[base] == board[base + 1] && board[base + 1] == board[base + 2] {
+            return board[base];
+        }
+        row = row + 1;
+    }
+
+    let mut col: i64 = 0;
+    while col < 3 {
+        if board[col] != 0 && board[col] == board[col + 3] && board[col + 3] == board[col + 6] {
+            return board[col];
+        }
+        col = col + 1;
+    }
+
+    if board[0] != 0 && board[0] == board[4] && board[4] == board[8] {
+        return board[0];
+    }
+    if board[2] != 0 && board[2] == board[4] && board[4] == board[6] {
+        return board[2];
+    }
+    return 0;
+}
+
+fn main() -> void {
+    // X побеждает по строке:   X X X
+    //                          O O .
+    //                          . . .
+    let board1: [i64; 9] = [1, 1, 1, 2, 2, 0, 0, 0, 0];
+    print(checkWinner(board1));
+
+    // O побеждает по столбцу:  X O X
+    //                          X O X
+    //                          . O .
+    let board2: [i64; 9] = [1, 2, 1, 1, 2, 1, 0, 2, 0];
+    print(checkWinner(board2));
+
+    // X побеждает по диагонали: X O .
+    //                           O X .
+    //                           . . X
+    let board3: [i64; 9] = [1, 2, 0, 2, 1, 0, 0, 0, 1];
+    print(checkWinner(board3));
+
+    // Нет победителя
+    let board4: [i64; 9] = [1, 2, 1, 1, 2, 2, 2, 1, 1];
+    print(checkWinner(board4));
+}

@@ -1,0 +1,47 @@
+// Стек на массиве фиксированного размера.
+// Мутации массива выполняются в main, функции используют массив только для чтения.
+
+fn peek(arr: [i64; 8], top: i64) -> i64 {
+    return arr[top - 1];
+}
+
+fn is_empty(top: i64) -> bool {
+    return top == 0;
+}
+
+fn print_stack(arr: [i64; 8], top: i64) {
+    let mut i: i64 = top - 1;
+    while i >= 0 {
+        print(arr[i]);
+        i = i - 1;
+    }
+}
+
+fn main() {
+    let mut data: [i64; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
+    let mut top: i64 = 0;
+
+    // push 10, 20, 30
+    data[top] = 10;  top = top + 1;
+    data[top] = 20;  top = top + 1;
+    data[top] = 30;  top = top + 1;
+
+    print(top);                  // 3
+    print(peek(data, top));      // 30
+    print(is_empty(top));        // false
+
+    // pop
+    top = top - 1;
+    print(peek(data, top));      // 20
+
+    // push ещё
+    data[top] = 99;  top = top + 1;
+    data[top] = 42;  top = top + 1;
+
+    // печатаем весь стек (сверху вниз)
+    print_stack(data, top);      // 42 99 20 10
+
+    // очищаем
+    top = 0;
+    print(is_empty(top));        // true
+}

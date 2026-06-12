@@ -1,0 +1,43 @@
+fn print_int_inline(n: i64) -> void {
+    if n == 0 {
+        print_char(48);
+        return;
+    }
+    let mut buf: [i64; 20] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    let mut len: i64 = 0;
+    let mut num: i64 = n;
+    while num > 0 {
+        buf[len] = num % 10 + 48;
+        num = num / 10;
+        len = len + 1;
+    }
+    let mut i: i64 = len - 1;
+    while i >= 0 {
+        print_char(buf[i]);
+        i = i - 1;
+    }
+}
+
+fn printNumberTriangle(n: i64) -> void {
+    let mut num: i64 = 1;
+    let mut row: i64 = 1;
+    while row <= n {
+        let mut col: i64 = 1;
+        while col <= row {
+            print_int_inline(num);
+            if col < row {
+                print_char(32);  // пробел
+            }
+            num = num + 1;
+            col = col + 1;
+        }
+        print_char(10);     // \n
+        row = row + 1;
+    }
+}
+
+fn main() -> void {
+    printNumberTriangle(4);
+    print("---");
+    printNumberTriangle(0);
+}

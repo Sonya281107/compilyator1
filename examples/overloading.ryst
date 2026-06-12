@@ -14,6 +14,6 @@ fn abs(x: f64) -> f64 {
 }
 
 fn main() {
-    print(abs(-42));      // calls abs__i64 → 42
-    print(abs(-3.14));    // calls abs__f64 → 3.14
+    print(abs(-42));      
+    print(abs(-3.14));    
 }
