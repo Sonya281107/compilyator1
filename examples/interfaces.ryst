@@ -1,0 +1,67 @@
+// Пример A.2.13: интерфейсы и динамический диспатч
+//
+// Интерфейс Shape задаёт контракт: любая фигура должна уметь вычислять
+// площадь (area) и периметр (perimeter).  Конкретные структуры Rect и Square
+// реализуют интерфейс через «impl S : I».  Переменные типа Shape хранятся
+// как fat-pointer {data_ptr, vtable_ptr} и вызывают нужную реализацию
+// через vtable во время выполнения (динамический диспатч).
+
+interface Shape {
+    fn area(self: i64) -> i64;
+    fn perimeter(self: i64) -> i64;
+}
+
+// Прямоугольник 
+
+struct Rect {
+    w: i64,
+    h: i64,
+}
+
+impl Rect : Shape {
+    pub fn area(self: Rect) -> i64 {
+        return self.w * self.h;
+    }
+    pub fn perimeter(self: Rect) -> i64 {
+        return 2 * (self.w + self.h);
+    }
+}
+
+// Квадрат
+
+struct Square {
+    side: i64,
+}
+
+impl Square : Shape {
+    pub fn area(self: Square) -> i64 {
+        return self.side * self.side;
+    }
+    pub fn perimeter(self: Square) -> i64 {
+        return 4 * self.side;
+    }
+}
+
+fn print_shape_info(s: Shape) {
+    print(s.area());
+    print(s.perimeter());
+}
+
+fn main() -> i64 {
+    let r: Rect   = Rect   { w: 4, h: 5 };
+    let q: Square = Square { side: 6 };
+
+    // Динамический диспатч через интерфейс
+    let s1: Shape = r;
+    let s2: Shape = q;
+
+    // Rect: area=20, perimeter=18
+    print(s1.area());
+    print(s1.perimeter());
+
+    // Square: area=36, perimeter=24
+    print(s2.area());
+    print(s2.perimeter());
+
+    return 0;
+}

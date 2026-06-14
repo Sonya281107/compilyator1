@@ -1,0 +1,22 @@
+// Тест перегрузки функций (A.2.8)
+fn describe(x: i64) -> i64 {
+    print(x);
+    return x;
+}
+
+fn describe(x: f64) -> f64 {
+    print(x);
+    return x;
+}
+
+fn describe(x: bool) -> bool {
+    print(x);
+    return x;
+}
+
+fn main() -> i64 {
+    describe(42);       // 42
+    describe(3.14);     // 3.14
+    describe(true);     // true
+    return 0;
+}

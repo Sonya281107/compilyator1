@@ -1,0 +1,49 @@
+// Тест A.2.10: перегрузка операторов
+
+struct Vec2i {
+    x: i64,
+    y: i64,
+}
+
+impl Vec2i {
+    fn __add__(self: Vec2i, other: Vec2i) -> Vec2i {
+        return Vec2i { x: self.x + other.x, y: self.y + other.y };
+    }
+    fn __sub__(self: Vec2i, other: Vec2i) -> Vec2i {
+        return Vec2i { x: self.x - other.x, y: self.y - other.y };
+    }
+    fn __mul__(self: Vec2i, other: Vec2i) -> Vec2i {
+        return Vec2i { x: self.x * other.x, y: self.y * other.y };
+    }
+    fn __eq__(self: Vec2i, other: Vec2i) -> bool {
+        return self.x == other.x && self.y == other.y;
+    }
+    fn __lt__(self: Vec2i, other: Vec2i) -> bool {
+        return self.x < other.x;
+    }
+}
+
+fn main() -> i64 {
+    let a: Vec2i = Vec2i { x: 1, y: 2 };
+    let b: Vec2i = Vec2i { x: 3, y: 4 };
+
+    let s: Vec2i = a + b;
+    print(s.x);           // 4
+    print(s.y);           // 6
+
+    let d: Vec2i = b - a;
+    print(d.x);           // 2
+    print(d.y);           // 2
+
+    let m: Vec2i = a * b;
+    print(m.x);           // 3
+    print(m.y);           // 8
+
+    print(a == a);        // true
+    print(a == b);        // false
+    print(a < b);         // true
+    print(b < a);         // false
+
+    return 0;
+}
+// ожидаемый вывод: 4  6  2  2  3  8  true  false  true  false

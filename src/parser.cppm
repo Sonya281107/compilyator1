@@ -3,6 +3,7 @@ module;
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -22,7 +23,7 @@ constexpr uint32_t NO_ID = UINT32_MAX;
 
 enum class SemKind {
     I8, I16, I32, I64, U8, U16, U32, U64,
-    F32, F64, Bool, String, Void, Array, Struct, Unknown
+    F32, F64, Bool, String, Void, Array, Struct, Interface, Unknown
 };
 
 struct SemType {
@@ -69,6 +70,9 @@ inline uint32_t sem_array(SemTypePool& pool, uint32_t elem, std::size_t n) {
 }
 inline uint32_t sem_struct(SemTypePool& pool, std::string name) {
     return pool.add(SemType{SemKind::Struct, NO_ID, 0, std::move(name)});
+}
+inline uint32_t sem_iface(SemTypePool& pool, std::string name) {
+    return pool.add(SemType{SemKind::Interface, NO_ID, 0, std::move(name)});
 }
 
 using TypeId = uint32_t;
@@ -290,6 +294,7 @@ struct StructField {
     SourceSpan span;
     uint32_t sem_type = NO_ID;
     std::size_t field_offset = 0;
+    bool is_public = true;
 };
 
 struct FnDecl {
@@ -301,6 +306,8 @@ struct FnDecl {
     uint32_t sem_return = NO_ID;
     std::size_t frame_bytes = 0;
     SourceSpan span;
+    bool is_public = true;
+    std::string impl_struct;
 };
 
 struct StructDecl {
@@ -323,15 +330,38 @@ struct NamespaceDecl {
 
 struct ImplDecl {
     std::string struct_name;
+    std::string interface_name; 
     std::vector<DeclId> methods;
     SourceSpan span;
 };
 
-using DeclNode = std::variant<FnDecl, StructDecl, TypeAliasDecl, NamespaceDecl, ImplDecl>;
+struct InterfaceMethodSig {
+    std::string name;
+    std::vector<Param> params;
+    std::optional<TypeId> return_type;
+    SourceSpan span;
+};
+
+struct InterfaceDecl {
+    std::string name;
+    std::vector<InterfaceMethodSig> methods;
+    SourceSpan span;
+};
+
+using DeclNode = std::variant<FnDecl, StructDecl, TypeAliasDecl, NamespaceDecl, ImplDecl, InterfaceDecl>;
 
 inline SourceSpan decl_span(const DeclNode& d) {
     return std::visit([](auto& n){ return n.span; }, d);
 }
+
+struct IfaceImplKey {
+    std::string struct_name;
+    std::string iface_name;
+    bool operator<(const IfaceImplKey& o) const {
+        if (struct_name != o.struct_name) return struct_name < o.struct_name;
+        return iface_name < o.iface_name;
+    }
+};
 
 struct Program {
     std::vector<ExprNode> exprs;
@@ -340,6 +370,8 @@ struct Program {
     std::vector<TypeNode> types;
     SemTypePool semtypes;
     std::vector<DeclId> top_decls;
+    std::map<std::string, std::vector<std::string>> interface_method_names; 
+    std::map<IfaceImplKey, std::vector<std::string>> iface_impls;          
 
     ExprId add_expr(ExprNode n) {
         exprs.push_back(std::move(n));
@@ -456,6 +488,7 @@ std::string sem_to_string(uint32_t id, const SemTypePool& pool) {
         case SemKind::Array:
             return "[" + sem_to_string(t.elem_id, pool) + "; " + std::to_string(t.array_size) + "]";
         case SemKind::Struct: return t.struct_name;
+        case SemKind::Interface: return t.struct_name;
         default:              return "?";
     }
 }
@@ -469,7 +502,7 @@ bool sem_equal(uint32_t a, uint32_t b, const SemTypePool& pool) {
     if (sa.kind == SemKind::Array) {
         return sa.array_size == sb.array_size && sem_equal(sa.elem_id, sb.elem_id, pool);
     }
-    if (sa.kind == SemKind::Struct) {
+    if (sa.kind == SemKind::Struct || sa.kind == SemKind::Interface) {
         return sa.struct_name == sb.struct_name;
     }
     return true;
@@ -561,6 +594,7 @@ private:
     DeclId parse_type_alias();
     DeclId parse_namespace();
     DeclId parse_impl();
+    DeclId parse_interface_decl();
 
     const std::vector<Token>& tokens_;
     const std::string& filename_;
@@ -1187,7 +1221,10 @@ DeclId ParserImpl::parse_decl() {
     if (at(TokenKind::ImplKw)) {
         return parse_impl();
     }
-    error("expected declaration (fn, struct, type, namespace, impl)");
+    if (at(TokenKind::InterfaceKw)) {
+        return parse_interface_decl();
+    }
+    error("expected declaration (fn, struct, type, namespace, impl, interface)");
 }
 
 DeclId ParserImpl::parse_fn_decl(const std::string& ns_prefix) {
@@ -1244,6 +1281,9 @@ DeclId ParserImpl::parse_struct_decl() {
     while (!at(TokenKind::RBrace) && !at_end()) {
         StructField f;
         f.span.begin = cur().span.begin;
+        f.is_public = true;
+        if (at(TokenKind::PubKw)) { consume(); f.is_public = true; }
+        else if (at(TokenKind::PrivKw)) { consume(); f.is_public = false; }
         if (!at(TokenKind::Identifier)) error("expected field name");
         f.name = cur().lexeme;
         consume();
@@ -1309,16 +1349,76 @@ DeclId ParserImpl::parse_impl() {
     std::string sname = cur().lexeme;
     consume();
 
+    std::string iname;
+    if (at(TokenKind::Colon)) {
+        consume();
+        if (!at(TokenKind::Identifier)) error("expected interface name after ':'");
+        iname = cur().lexeme;
+        consume();
+    }
+
     expect(TokenKind::LBrace, "'{'");
     ImplDecl impl;
     impl.struct_name = sname;
-    while (!at(TokenKind::RBrace) && !at_end()) {
+    impl.interface_name = iname;
+    while (!at(TokenKind::RBrace) && !at_end()) {   
+        bool method_pub = true;
+        if (at(TokenKind::PubKw)) { consume(); method_pub = true; }
+        else if (at(TokenKind::PrivKw)) { consume(); method_pub = false; }
         if (!at(TokenKind::FnKw)) error("expected 'fn' inside impl block");
-        impl.methods.push_back(parse_fn_decl(sname));
+        DeclId mid = parse_fn_decl(sname);
+        std::get<FnDecl>(prog_.decl(mid)).is_public = method_pub;
+        impl.methods.push_back(mid);
     }
     impl.span = {start, cur().span.end};
     expect(TokenKind::RBrace, "'}'");
     return prog_.add_decl(std::move(impl));
+}
+
+DeclId ParserImpl::parse_interface_decl() {
+    SourcePos start = cur().span.begin;
+    expect(TokenKind::InterfaceKw, "'interface'");
+
+    if (!at(TokenKind::Identifier)) error("expected interface name");
+    InterfaceDecl iface;
+    iface.name = cur().lexeme;
+    consume();
+
+    expect(TokenKind::LBrace, "'{'");
+    while (!at(TokenKind::RBrace) && !at_end()) {
+        expect(TokenKind::FnKw, "'fn'");
+        if (!at(TokenKind::Identifier)) error("expected method name in interface");
+        InterfaceMethodSig sig;
+        sig.span.begin = cur().span.begin;
+        sig.name = cur().lexeme;
+        consume();
+
+        expect(TokenKind::LParen, "'('");
+        while (!at(TokenKind::RParen) && !at_end()) {
+            Param p;
+            p.span.begin = cur().span.begin;
+            if (!at(TokenKind::Identifier)) error("expected parameter name");
+            p.name = cur().lexeme;
+            consume();
+            expect(TokenKind::Colon, "':'");
+            p.type = parse_type();
+            p.span.end = type_span(prog_.type(p.type)).end;
+            sig.params.push_back(std::move(p));
+            if (!try_eat(TokenKind::Comma)) break;
+        }
+        expect(TokenKind::RParen, "')'");
+
+        if (at(TokenKind::Arrow)) {
+            consume();
+            sig.return_type = parse_type();
+        }
+        sig.span.end = cur().span.end;
+        expect(TokenKind::Semicolon, "';'");
+        iface.methods.push_back(std::move(sig));
+    }
+    iface.span = {start, cur().span.end};
+    expect(TokenKind::RBrace, "'}'");
+    return prog_.add_decl(std::move(iface));
 }
 
 void ParserImpl::parse_program() {

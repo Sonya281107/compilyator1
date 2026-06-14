@@ -6,6 +6,7 @@ module;
 #include <cstdint>
 #include <cstdio>
 #include <map>
+#include <numeric>
 #include <ostream>
 #include <set>
 #include <sstream>
@@ -52,8 +53,8 @@ public:
         {"r12", "r13", "r14", "r15"};
 
     // Outputs
-    std::map<std::string, std::string> reg_map;    // varname  - phys register
-    std::vector<std::string>           saved_regs; // regs that need push/pop
+    std::map<std::string, std::string> reg_map;    
+    std::vector<std::string>           saved_regs; 
 
     void run(const Program& prog, const FnDecl& fd);
 
@@ -185,61 +186,45 @@ void RegAllocator::linear_scan(const Program& prog) {
         int lp = last_use_.count(name) ? last_use_.at(name) : fp;
         ivals.push_back({name, fp, lp, ""});
     }
+    if (ivals.empty()) return;
 
-    // Sort by start of live range.
-    std::sort(ivals.begin(), ivals.end(),
-              [](const LiveInterval& a, const LiveInterval& b) {
-                  return a.start < b.start;
-              });
-
-    std::vector<std::string> free_regs(REGS.rbegin(), REGS.rend());
-
-    std::vector<LiveInterval*> active;
-
-    for (auto& ival : ivals) {
-        {
-            std::vector<LiveInterval*> still;
-            for (LiveInterval* a : active) {
-                if (a->end < ival.start)
-                    free_regs.push_back(a->reg);
-                else
-                    still.push_back(a);
+    const std::size_t N = ivals.size();
+    std::vector<std::set<std::size_t>> adj(N);
+    for (std::size_t i = 0; i < N; ++i) {
+        for (std::size_t j = i + 1; j < N; ++j) {
+            if (ivals[i].start <= ivals[j].end && ivals[j].start <= ivals[i].end) {
+                adj[i].insert(j);
+                adj[j].insert(i);
             }
-            active = std::move(still);
         }
+    }
 
-        if (free_regs.empty()) {
-            auto spill_it = std::max_element(active.begin(), active.end(),
-                [](const LiveInterval* a, const LiveInterval* b) {
-                    return a->end < b->end;
-                });
-            if (spill_it != active.end() &&
-                (*spill_it)->end > ival.end) {
-                ival.reg = (*spill_it)->reg;
-                (*spill_it)->reg = "";
-                active.erase(spill_it);
-                active.push_back(&ival);
-                std::sort(active.begin(), active.end(),
-                    [](const LiveInterval* a, const LiveInterval* b) {
-                        return a->end < b->end;
-                    });
+
+    std::vector<std::size_t> order(N);
+    std::iota(order.begin(), order.end(), 0);
+    std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+        return adj[a].size() > adj[b].size();
+    });
+
+    std::vector<int> color(N, -1); 
+    for (std::size_t idx : order) {
+        std::set<int> used_colors;
+        for (std::size_t nb : adj[idx]) {
+            if (color[nb] >= 0) used_colors.insert(color[nb]);
+        }
+        for (int c = 0; c < static_cast<int>(NUM_REGS); ++c) {
+            if (!used_colors.count(c)) {
+                color[idx] = c;
+                break;
             }
-        } else {
-            ival.reg = free_regs.back();
-            free_regs.pop_back();
-            active.push_back(&ival);
-            std::sort(active.begin(), active.end(),
-                [](const LiveInterval* a, const LiveInterval* b) {
-                    return a->end < b->end;
-                });
         }
     }
 
     std::set<std::string> used;
-    for (auto& ival : ivals) {
-        if (!ival.reg.empty()) {
-            reg_map[ival.name] = ival.reg;
-            used.insert(ival.reg);
+    for (std::size_t i = 0; i < N; ++i) {
+        if (color[i] >= 0) {
+            reg_map[ivals[i].name] = REGS[static_cast<std::size_t>(color[i])];
+            used.insert(REGS[static_cast<std::size_t>(color[i])]);
         }
     }
     saved_regs.assign(used.begin(), used.end());
@@ -281,9 +266,10 @@ struct Gen {
 
     std::map<std::string, DeclId> struct_defs;
 
-    std::map<std::string, std::string>  regalloc_map;   // varname - phys register
-    std::map<std::string, std::size_t>  reg_save_slots; // register - [rbp - N] offset
-    std::vector<std::string>            fn_saved_regs;  // registers to save/restore
+    std::map<std::string, std::string>  regalloc_map;   
+    std::map<std::string, std::size_t>  reg_save_slots; 
+    std::vector<std::string>            fn_saved_regs; 
+    uint32_t cur_fn_ret_type_ = NO_ID; 
 
     void emit(const std::string& s) {
         out << s << "\n";
@@ -320,6 +306,7 @@ struct Gen {
     uint32_t emit_assign(const AssignExpr& e);
 
     uint32_t emit_call(const CallExpr& e);
+    uint32_t emit_vtable_call(const CallExpr& e); // A.2.13
     uint32_t emit_builtin_print(const CallExpr& e);
     uint32_t emit_builtin_input(const CallExpr& e);
     uint32_t emit_builtin_exit(const CallExpr& e);
@@ -338,6 +325,7 @@ struct Gen {
     void emit_fn(const FnDecl& fd);
     void emit_input_helper();
     void emit_top_decl(DeclId did);
+    void emit_vtable_thunks(); // A.2.13
     void generate();
 };
 
@@ -404,6 +392,12 @@ void Gen::pre_collect_literals() {
             add_string(std::get<StringLitExpr>(e).value);
         } else if (std::holds_alternative<FloatLitExpr>(e)) {
             add_float(std::get<FloatLitExpr>(e).value);
+        } else if (std::holds_alternative<IntLitExpr>(e)) {
+            uint32_t st = std::get<IntLitExpr>(e).sem_type;
+            if (st != NO_ID && is_float_type(st)) {
+                double v = static_cast<double>(std::get<IntLitExpr>(e).value);
+                add_float(v);
+            }
         }
     }
 }
@@ -429,6 +423,18 @@ void Gen::emit_data_section() {
                       static_cast<unsigned long long>(bits));
         out << "__F" << i << " dq 0x" << hex_buf.data() << "\n";
     }
+
+    for (auto& [key, methods] : prog.iface_impls) {
+        out << "__vtable_" << key.struct_name << "_" << key.iface_name << ":\n";
+        auto nit = prog.interface_method_names.find(key.iface_name);
+        for (std::size_t i = 0; i < methods.size(); ++i) {
+            std::string mname = (nit != prog.interface_method_names.end() &&
+                                 i < nit->second.size())
+                                ? nit->second[i] : std::to_string(i);
+            out << "    dq __thunk_" << key.struct_name << "_"
+                << key.iface_name << "_" << mname << "\n";
+        }
+    }
 }
 
 
@@ -437,7 +443,13 @@ uint32_t Gen::emit_expr(ExprId eid) {
     uint32_t t = expr_sem_type(e);
 
     if (std::holds_alternative<IntLitExpr>(e)) {
-        emit_ins("mov rax, " + std::to_string(std::get<IntLitExpr>(e).value));
+        if (is_float_type(t)) {
+            double v = static_cast<double>(std::get<IntLitExpr>(e).value);
+            std::string lbl = add_float(v);
+            emit_ins("movsd xmm0, [rel " + lbl + "]");
+        } else {
+            emit_ins("mov rax, " + std::to_string(std::get<IntLitExpr>(e).value));
+        }
         return t;
     }
 
@@ -692,13 +704,18 @@ uint32_t Gen::emit_binary(const BinaryExpr& e) {
         return emit_operator_call(e.left, e.right, e.resolved_fn, e.sem_type);
 
     uint32_t lt = expr_sem_type(prog.expr(e.left));
-    bool is_flt = is_float_type(lt);
+    uint32_t rt = expr_sem_type(prog.expr(e.right));
+    bool lt_flt = is_float_type(lt);
+    bool rt_flt = is_float_type(rt);
+    bool is_flt = lt_flt || rt_flt;
 
     if (is_flt) {
         emit_expr(e.left);
+        if (!lt_flt) emit_ins("cvtsi2sd xmm0, rax"); 
         emit_ins("sub rsp, 8");
         emit_ins("movsd [rsp], xmm0");
         emit_expr(e.right);
+        if (!rt_flt) emit_ins("cvtsi2sd xmm0, rax"); 
         emit_ins("movsd xmm1, xmm0");
         emit_ins("movsd xmm0, [rsp]");
         emit_ins("add rsp, 8");
@@ -902,8 +919,11 @@ uint32_t Gen::emit_field(const FieldExpr& e) {
 
 uint32_t Gen::emit_assign(const AssignExpr& e) {
     uint32_t vt = e.sem_type;
-    bool is_flt = is_float_type(expr_sem_type(prog.expr(e.value)));
+    uint32_t val_t = expr_sem_type(prog.expr(e.value));
+    bool val_flt = is_float_type(val_t);
+    bool is_flt  = is_float_type(vt) || val_flt; 
     emit_expr(e.value);
+    if (is_float_type(vt) && !val_flt) emit_ins("cvtsi2sd xmm0, rax");
 
     const ExprNode& target = prog.expr(e.target);
 
@@ -917,8 +937,6 @@ uint32_t Gen::emit_assign(const AssignExpr& e) {
 
     } else if (std::holds_alternative<IndexExpr>(target)) {
         const IndexExpr& ie = std::get<IndexExpr>(target);
-
-        // Save the value to be stored (rax or xmm0).
         if (is_flt) {
             emit_ins("sub rsp, 8");
             emit_ins("movsd [rsp], xmm0");
@@ -927,13 +945,10 @@ uint32_t Gen::emit_assign(const AssignExpr& e) {
         }
 
         if (std::holds_alternative<IdentExpr>(prog.expr(ie.array))) {
-            // Compute array base address into rcx.
             emit_ins("lea rcx, " +
                      var_addr(std::get<IdentExpr>(prog.expr(ie.array)).name));
-            // Compute index into rbx (emit_expr uses rax).
             emit_expr(ie.index);
             emit_ins("mov rbx, rax");
-            // Restore the value and write to array[index].
             if (is_flt) {
                 emit_ins("movsd xmm0, [rsp]");
                 emit_ins("add rsp, 8");
@@ -1118,12 +1133,51 @@ uint32_t Gen::emit_call(const CallExpr& e) {
     }
 
     emit_ins("and rsp, -16");
+    if (e.resolved_fn.rfind("__vtable_call__", 0) == 0) {
+        return emit_vtable_call(e);
+    }
     emit_ins("mov eax, " + std::to_string(flt_reg_idx));
     emit_ins("call " + e.resolved_fn);
     emit_ins("mov rsp, rbp");
     emit_ins("sub rsp, " + std::to_string(aligned_frame_bytes));
 
     return ret_t;
+}
+
+uint32_t Gen::emit_vtable_call(const CallExpr& e) {
+    const FieldExpr& fe = std::get<FieldExpr>(prog.expr(e.callee));
+    uint32_t obj_t = expr_sem_type(prog.expr(fe.object));
+    const std::string& iname = prog.semtypes.get(obj_t).struct_name;
+    const std::string& method_name = fe.field;
+
+    int vtable_idx = -1;
+    auto nit = prog.interface_method_names.find(iname);
+    if (nit != prog.interface_method_names.end()) {
+        for (int i = 0; i < static_cast<int>(nit->second.size()); ++i) {
+            if (nit->second[i] == method_name) { vtable_idx = i; break; }
+        }
+    }
+
+    int64_t iface_off = 0;
+    const ExprNode& obj_en = prog.expr(fe.object);
+    if (std::holds_alternative<IdentExpr>(obj_en)) {
+        const std::string& vname = std::get<IdentExpr>(obj_en).name;
+        auto lit = locals.find(vname);
+        if (lit != locals.end()) iface_off = lit->second;
+    }
+
+    int64_t vtable_ptr_off = iface_off + 8;
+    if (vtable_ptr_off < 0)
+        emit_ins("mov r10, [rbp - " + std::to_string(-vtable_ptr_off) + "]");
+    else
+        emit_ins("mov r10, [rbp + " + std::to_string(vtable_ptr_off) + "]");
+
+    if (vtable_idx >= 0)
+        emit_ins("call [r10 + " + std::to_string(vtable_idx * 8) + "]");
+
+    emit_ins("mov rsp, rbp");
+    emit_ins("sub rsp, " + std::to_string(aligned_frame_bytes));
+    return e.sem_type;
 }
 
 uint32_t Gen::emit_builtin_print(const CallExpr& e) {
@@ -1242,9 +1296,37 @@ void Gen::emit_var_decl(const VarDeclStmt& vs) {
             }
         }
 
+    } else if (vs.sem_type != NO_ID &&
+               prog.semtypes.get(vs.sem_type).kind == SemKind::Interface) {
+        const std::string& iname = prog.semtypes.get(vs.sem_type).struct_name;
+        uint32_t init_t = expr_sem_type(prog.expr(vs.init));
+        std::string sname;
+        if (init_t != NO_ID && prog.semtypes.get(init_t).kind == SemKind::Struct)
+            sname = prog.semtypes.get(init_t).struct_name;
+
+        const ExprNode& init_en = prog.expr(vs.init);
+        if (std::holds_alternative<IdentExpr>(init_en)) {
+            emit_ins("lea rax, " + var_addr(std::get<IdentExpr>(init_en).name));
+        }
+
+        int64_t off = vs.frame_offset;
+        auto mem_at = [](int64_t o) -> std::string {
+            return o < 0 ? "[rbp - " + std::to_string(-o) + "]"
+                         : "[rbp + " + std::to_string(o) + "]";
+        };
+        emit_ins("mov " + mem_at(off) + ", rax");         
+        if (!sname.empty()) {
+            emit_ins("lea rax, [rel __vtable_" + sname + "_" + iname + "]");
+            emit_ins("mov " + mem_at(off + 8) + ", rax"); 
+        }
+
     } else {
         uint32_t et = emit_expr(vs.init);
         std::string addr = var_addr(vs.name);
+        if (is_float_type(vs.sem_type) && !is_float_type(et)) {
+            emit_ins("cvtsi2sd xmm0, rax");
+            et = vs.sem_type;
+        }
 
         if (is_float_type(et)) {
             emit_ins("movsd " + addr + ", xmm0");
@@ -1325,8 +1407,14 @@ void Gen::emit_stmt(StmtId sid) {
 
     } else if (std::holds_alternative<ReturnStmt>(s)) {
         const ReturnStmt& rs = std::get<ReturnStmt>(s);
-        if (rs.value) emit_expr(*rs.value);
-        emit_epilogue();  
+        if (rs.value) {
+            uint32_t val_t = emit_expr(*rs.value);
+            if (cur_fn_ret_type_ != NO_ID && is_float_type(cur_fn_ret_type_) &&
+                val_t != NO_ID && !is_float_type(val_t)) {
+                emit_ins("cvtsi2sd xmm0, rax");
+            }
+        }
+        emit_epilogue();
 
     } else if (std::holds_alternative<BreakStmt>(s)) {
         if (!loop_end_labels.empty()) {
@@ -1353,6 +1441,7 @@ void Gen::emit_fn(const FnDecl& fd) {
     regalloc_map = ra.reg_map;
     fn_saved_regs = ra.saved_regs;
 
+    cur_fn_ret_type_ = fd.sem_return; 
     frame_bytes = fd.frame_bytes;
     std::size_t reg_save_bytes = fn_saved_regs.size() * 8;
     std::size_t aligned = (frame_bytes + reg_save_bytes + 15) & ~15ULL;
@@ -1484,6 +1573,44 @@ void Gen::emit_input_helper() {
     emit("");
 }
 
+
+void Gen::emit_vtable_thunks() {
+    static const std::array<std::string, 6> int_regs{"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
+
+    for (auto& [key, methods] : prog.iface_impls) {
+        auto sit = struct_defs.find(key.struct_name);
+        if (sit == struct_defs.end()) continue;
+        const StructDecl& sd = std::get<StructDecl>(prog.decl(sit->second));
+
+        auto nit = prog.interface_method_names.find(key.iface_name);
+
+        for (std::size_t i = 0; i < methods.size(); ++i) {
+            const std::string& mangled = methods[i];
+            std::string mname = (nit != prog.interface_method_names.end() &&
+                                 i < nit->second.size())
+                                ? nit->second[i] : std::to_string(i);
+            emit_label("__thunk_" + key.struct_name + "_" + key.iface_name + "_" + mname);
+
+            if (!sd.fields.empty()) {
+                emit_ins("mov r11, rdi");
+                int int_idx = 0;
+                for (std::size_t fi = 0; fi < sd.fields.size() && fi < 6; ++fi) {
+                    std::string src = "[r11 + " + std::to_string(fi * 8) + "]";
+                    if (sd.fields[fi].sem_type != NO_ID &&
+                        is_float_type(sd.fields[fi].sem_type)) {
+                        emit_ins("movsd xmm" + std::to_string(fi) + ", " + src);
+                    } else {
+                        emit_ins("mov " + int_regs[int_idx++] + ", " + src);
+                    }
+                }
+            }
+
+            emit_ins("jmp " + mangled);
+            emit("");
+        }
+    }
+}
+
 void Gen::emit_top_decl(DeclId did) {
     const DeclNode& d = prog.decl(did);
 
@@ -1499,6 +1626,8 @@ void Gen::emit_top_decl(DeclId did) {
         for (DeclId m : std::get<ImplDecl>(d).methods) {
             emit_fn(std::get<FnDecl>(prog.decl(m)));
         }
+    } else if (std::holds_alternative<InterfaceDecl>(d)) {
+        // A.2.13: interface declarations produce no code
     }
 }
 
@@ -1520,12 +1649,11 @@ void Gen::generate() {
 
     pre_collect_literals();
     emit_preamble();
-    if (!str_literals.empty() || !flt_literals.empty()) {
-        emit_data_section();
-    }
+    emit_data_section(); 
     emit("");
     emit("section .text");
     emit_input_helper();
+    emit_vtable_thunks(); 
     for (DeclId did : prog.top_decls) {
         emit_top_decl(did);
     }

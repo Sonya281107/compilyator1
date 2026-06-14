@@ -11,9 +11,9 @@ export namespace Lexer {
 enum class TokenKind {
     EndOfFile, Invalid,
     Identifier, IntLiteral, FloatLiteral, StringLiteral,
-    FnKw, LetKw, MutKw, StructKw, TypeKw, NamespaceKw, ImplKw,
+    FnKw, LetKw, MutKw, StructKw, TypeKw, NamespaceKw, ImplKw, InterfaceKw,
     IfKw, ElseKw, WhileKw, BreakKw, ContinueKw, ReturnKw, AsKw,
-    TrueKw, FalseKw, VoidKw, BoolKw, StringKw,
+    TrueKw, FalseKw, PubKw, PrivKw, VoidKw, BoolKw, StringKw,
     I8Kw, I16Kw, I32Kw, I64Kw, U8Kw, U16Kw, U32Kw, U64Kw, F32Kw, F64Kw,
     LParen, RParen, LBrace, RBrace, LBracket, RBracket,
     Comma, Semicolon, Colon, ColonColon, Dot, Arrow,
@@ -76,7 +76,7 @@ private:
     bool is_digit(char c) const;
     bool is_alnum(char c) const;
     bool is_hex_digit(char c) const;
-    void consume_num_suffix();          // A.1.1: consume optional type suffix
+    void consume_num_suffix();          
     TokenKind identifier_kind(std::string_view text) const;
 
     std::string_view source_;
@@ -108,6 +108,7 @@ std::string_view token_kind_name(TokenKind kind) {
         case TokenKind::TypeKw: return "type";
         case TokenKind::NamespaceKw: return "namespace";
         case TokenKind::ImplKw: return "impl";
+        case TokenKind::InterfaceKw: return "interface";
         case TokenKind::IfKw: return "if";
         case TokenKind::ElseKw: return "else";
         case TokenKind::WhileKw: return "while";
@@ -117,6 +118,8 @@ std::string_view token_kind_name(TokenKind kind) {
         case TokenKind::AsKw: return "as";
         case TokenKind::TrueKw: return "true";
         case TokenKind::FalseKw: return "false";
+        case TokenKind::PubKw: return "pub";
+        case TokenKind::PrivKw: return "priv";
         case TokenKind::VoidKw: return "void";
         case TokenKind::BoolKw: return "bool";
         case TokenKind::StringKw: return "string";
@@ -229,7 +232,6 @@ void Lexer::consume_num_suffix() {
         std::size_t remaining = source_.size() - index_;
         if (remaining < len) continue;
         if (source_.substr(index_, len) != suf) continue;
-        // Ensure nothing alphanumeric follows the suffix.
         if (remaining > len && is_alnum(source_[index_ + len])) continue;
         for (std::size_t k = 0; k < len; ++k) advance();
         return;
@@ -274,6 +276,7 @@ TokenKind Lexer::identifier_kind(std::string_view t) const {
     if (t == "type") return TokenKind::TypeKw;
     if (t == "namespace") return TokenKind::NamespaceKw;
     if (t == "impl") return TokenKind::ImplKw;
+    if (t == "interface") return TokenKind::InterfaceKw;
     if (t == "if") return TokenKind::IfKw;
     if (t == "else") return TokenKind::ElseKw;
     if (t == "while") return TokenKind::WhileKw;
@@ -283,6 +286,8 @@ TokenKind Lexer::identifier_kind(std::string_view t) const {
     if (t == "as") return TokenKind::AsKw;
     if (t == "true") return TokenKind::TrueKw;
     if (t == "false") return TokenKind::FalseKw;
+    if (t == "pub") return TokenKind::PubKw;
+    if (t == "priv") return TokenKind::PrivKw;
     if (t == "void") return TokenKind::VoidKw;
     if (t == "bool") return TokenKind::BoolKw;
     if (t == "string") return TokenKind::StringKw;

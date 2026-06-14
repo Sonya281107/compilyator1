@@ -1,2 +1,6 @@
 build/
-build/
+*.o
+*.asm
+*.asm.asm
+compile_commands.json
+.cache/

@@ -1,0 +1,62 @@
+// Тест B.3.7: arena-style AST
+//
+// Глубоко вложенные выражения, взаимно рекурсивные вызовы и сложные структуры данных нагружают хранилище ExprId/StmtId/DeclId в Program.
+
+fn fib(n: i64) -> i64 {
+    if n <= 1 { return n; }
+    let mut a: i64 = 0;
+    let mut b: i64 = 1;
+    let mut i: i64 = 2;
+    while i <= n {
+        let tmp: i64 = a + b;
+        a = b;
+        b = tmp;
+        i = i + 1;
+    }
+    return b;
+}
+
+fn sum_range(lo: i64, hi: i64) -> i64 {
+    let mut s: i64 = 0;
+    let mut k: i64 = lo;
+    while k <= hi {
+        s = s + k;
+        k = k + 1;
+    }
+    return s;
+}
+
+fn max3(a: i64, b: i64, c: i64) -> i64 {
+    if a >= b && a >= c { return a; }
+    if b >= c { return b; }
+    return c;
+}
+
+fn main() -> i64 {
+    // Вычисляем через промежуточные переменные, чтобы дать нагрузку на AST-арену
+    let f3: i64  = fib(3);              // 2
+    let f4: i64  = fib(4);              // 3
+    let f5: i64  = fib(5);              // 5
+    let arg: i64 = f3 + 2;             // 4
+    let a: i64   = fib(arg);           // fib(4) = 3
+    let b: i64   = sum_range(1, f4);   // sum_range(1,3) = 6
+    let result: i64 = a + b;           // 9
+    print(result);       // 9
+
+    // Трёхкратное вложение через переменные
+    let ff3: i64  = fib(f3);           // fib(2) = 1
+    let arg2: i64 = ff3 + 1;           // 2
+    let c: i64    = fib(arg2);         // fib(2) = 1
+    print(c);          // 1
+
+    // max3 с предварительно вычисленными аргументами
+    let sr13: i64 = sum_range(1, 3);   // 6
+    print(max3(f5, sr13, f4));         // max3(5,6,3) = 6
+
+    // Глубоко вложенные арифметические выражения (нет вызовов в подвыражениях)
+    let x: i64 = (1 + 2) * (3 + 4) - (5 - 1);  // 3*7-4 = 17
+    print(x);            // 17
+
+    return 0;
+}
+// ожидаемый вывод: 9  1  6  17

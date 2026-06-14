@@ -1,0 +1,26 @@
+// Тест A.1.7: вывод типов переменных и возвращаемых значений функций
+
+fn square(n: i64) -> i64 { return n * n; }
+
+// Возвращаемый тип выводится из return (не объявлен явно)
+fn make_sum(a: i64, b: i64) {
+    print(a + b);
+}
+
+fn main() -> i64 {
+    let x = 10;          // i64
+    let y = 2.5;         // f64
+    let z = false;       // bool
+    let w = x * 3;       // i64 (тип x)
+    print(x);            // 10
+    print(y);            // 2.5
+    print(z);            // false
+    print(w);            // 30
+
+    let r = square(7);   // i64
+    print(r);            // 49
+
+    make_sum(3, 4);      // 7
+    return 0;
+}
+// ожидаемый вывод: 10  2.5  false  30  49  7

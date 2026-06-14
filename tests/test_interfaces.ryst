@@ -1,0 +1,32 @@
+// Тест интерфейсов и динамического диспатча (A.2.13)
+
+interface Animal {
+    fn speak(self: i64) -> i64;
+}
+
+struct Dog { }
+struct Cat { }
+
+impl Dog : Animal {
+    pub fn speak(self: Dog) -> i64 {
+        print(1);  // 1 = Dog
+        return 1;
+    }
+}
+
+impl Cat : Animal {
+    pub fn speak(self: Cat) -> i64 {
+        print(2);  // 2 = Cat
+        return 2;
+    }
+}
+
+fn main() -> i64 {
+    let d: Dog    = Dog { };
+    let c: Cat    = Cat { };
+    let a1: Animal = d;
+    let a2: Animal = c;
+    a1.speak();   // 1
+    a2.speak();   // 2
+    return 0;
+}

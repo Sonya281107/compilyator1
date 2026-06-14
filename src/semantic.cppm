@@ -54,6 +54,7 @@ static std::string mangle_type(uint32_t id, const SemTypePool& pool) {
         case SemKind::Void: return "void";
         case SemKind::Array: return "arr";
         case SemKind::Struct: return t.struct_name;
+        case SemKind::Interface: return t.struct_name;
         default: return "unk";
     }
 }
@@ -69,10 +70,13 @@ struct FnInfo {
     std::string mangled_name;
     std::vector<std::pair<std::string, uint32_t>> params;
     uint32_t return_type;
+    bool is_public = true;
 };
 
 struct StructInfo {
     std::vector<std::pair<std::string, uint32_t>> fields;
+    std::map<std::string, bool> field_visibility;   
+    std::map<std::string, bool> method_visibility; 
     std::size_t total_bytes = 0;
 
     std::size_t field_offset(const std::string& name) const {
@@ -85,12 +89,56 @@ struct StructInfo {
     }
 };
 
+
+static bool can_implicit_widen(SemKind from, SemKind to) {
+    if (from == to) return true;
+    switch (from) {
+        case SemKind::I8:
+            return to == SemKind::I16 || to == SemKind::I32 || to == SemKind::I64
+                || to == SemKind::F32 || to == SemKind::F64;
+        case SemKind::I16:
+            return to == SemKind::I32 || to == SemKind::I64
+                || to == SemKind::F32 || to == SemKind::F64;
+        case SemKind::I32:
+            return to == SemKind::I64 || to == SemKind::F32 || to == SemKind::F64;
+        case SemKind::I64:
+            return to == SemKind::F32 || to == SemKind::F64;
+        case SemKind::U8:
+            return to == SemKind::U16 || to == SemKind::U32 || to == SemKind::U64
+                || to == SemKind::F32 || to == SemKind::F64;
+        case SemKind::U16:
+            return to == SemKind::U32 || to == SemKind::U64
+                || to == SemKind::F32 || to == SemKind::F64;
+        case SemKind::U32:
+            return to == SemKind::U64 || to == SemKind::F32 || to == SemKind::F64;
+        case SemKind::U64:
+            return to == SemKind::F32 || to == SemKind::F64;
+        case SemKind::F32:
+            return to == SemKind::F64;
+        default:
+            return false;
+    }
+}
+
+
+struct InterfaceMethodInfo {
+    std::string name;
+    std::vector<std::pair<std::string, uint32_t>> params; 
+    uint32_t return_type = NO_ID;
+};
+
+struct InterfaceInfo {
+    std::string name;
+    std::vector<InterfaceMethodInfo> methods; 
+};
+
 struct Scope {
     std::optional<std::size_t> parent_idx;
     std::map<std::string, VarInfo> vars;
     std::map<std::string, std::vector<FnInfo>> fns;
     std::map<std::string, uint32_t> type_aliases;
     std::map<std::string, StructInfo> structs;
+    std::map<std::string, InterfaceInfo> interfaces; 
 };
 
 
@@ -115,12 +163,16 @@ private:
     uint32_t cur_ret_type_ = NO_ID;
     bool in_loop_ = false;
     int64_t frame_bytes_ = 0;
+    bool inferring_return_ = false;
+    uint32_t inferred_return_type_ = NO_ID;
+    std::string current_impl_struct_;
 
     void push_scope();
     void pop_scope();
     std::optional<VarInfo> lookup_var(const std::string& name);
     std::optional<uint32_t> lookup_type_alias(const std::string& name);
     std::optional<StructInfo> lookup_struct(const std::string& name);
+    std::optional<InterfaceInfo> lookup_interface(const std::string& name); 
     std::optional<FnInfo> resolve_overload(const std::string& name,
                                            const std::vector<ExprId>& arg_exprs,
                                            const std::vector<uint32_t>& arg_types);
@@ -129,6 +181,7 @@ private:
     void err(SourceSpan span, const std::string& msg);
     bool try_coerce_literal(ExprId eid, uint32_t target_type);
 
+    void update_fn_return_type(const std::string& mangled_name, uint32_t new_ret_type);
     void register_builtins();
     void register_decl(DeclId did, const std::string& ns_prefix);
     void register_fn(FnDecl& fd, const std::string& ns_prefix);
@@ -219,6 +272,14 @@ std::optional<StructInfo> Analyser::lookup_struct(const std::string& name) {
     return std::nullopt;
 }
 
+std::optional<InterfaceInfo> Analyser::lookup_interface(const std::string& name) {
+    for (int i = static_cast<int>(scopes_.size()) - 1; i >= 0; --i) {
+        auto it = scopes_[i].interfaces.find(name);
+        if (it != scopes_[i].interfaces.end()) return it->second;
+    }
+    return std::nullopt;
+}
+
 std::optional<FnInfo> Analyser::resolve_overload(
         const std::string& name,
         const std::vector<ExprId>& arg_exprs,
@@ -240,7 +301,6 @@ std::optional<FnInfo> Analyser::resolve_overload(
         if (it == scopes_[i].fns.end()) continue;
         const std::vector<FnInfo>& cands = it->second;
 
-        // Pass 1: exact match
         for (const FnInfo& fi : cands) {
             if (fi.params.size() != arg_types.size()) continue;
             bool ok = true;
@@ -262,6 +322,23 @@ std::optional<FnInfo> Analyser::resolve_overload(
                     ok = false;
                     break;
                 }
+            }
+            if (ok) return fi;
+        }
+
+        for (const FnInfo& fi : cands) {
+            if (fi.params.size() != arg_types.size()) continue;
+            bool ok = true;
+            for (std::size_t j = 0; j < arg_types.size(); ++j) {
+                if (sem_equal(arg_types[j], fi.params[j].second, prog_.semtypes)) continue;
+                if (is_lit_coercible(j, fi.params[j].second)) continue;
+                if (arg_types[j] != NO_ID && fi.params[j].second != NO_ID) {
+                    SemKind fk = prog_.semtypes.get(arg_types[j]).kind;
+                    SemKind tk = prog_.semtypes.get(fi.params[j].second).kind;
+                    if (can_implicit_widen(fk, tk)) continue;
+                }
+                ok = false;
+                break;
             }
             if (ok) return fi;
         }
@@ -294,6 +371,10 @@ uint32_t Analyser::resolve_type(TypeId tid) {
         if (auto si = lookup_struct(n.name)) {
             (void)si;
             return sem_struct(prog_.semtypes, n.name);
+        }
+        if (auto ii = lookup_interface(n.name)) {
+            (void)ii;
+            return sem_iface(prog_.semtypes, n.name);
         }
         err(n.span, "unknown type '" + n.name + "'");
         return make_sem(prog_.semtypes, SemKind::Unknown);
@@ -400,17 +481,73 @@ void Analyser::register_decl(DeclId did, const std::string& ns_prefix) {
 
     } else if (std::holds_alternative<ImplDecl>(d)) {
         auto& id = std::get<ImplDecl>(d);
+        auto sit = cur_scope().structs.find(id.struct_name);
         for (DeclId m : id.methods) {
-            register_fn(std::get<FnDecl>(prog_.decl(m)), id.struct_name);
+            FnDecl& method = std::get<FnDecl>(prog_.decl(m));
+            method.impl_struct = id.struct_name;  // A.2.12
+            register_fn(method, id.struct_name);
+            if (sit != cur_scope().structs.end()) {
+                sit->second.method_visibility[method.name] = method.is_public;
+            }
         }
+        if (!id.interface_name.empty()) {
+            auto ii = lookup_interface(id.interface_name);
+            if (!ii.has_value()) {
+                err(id.span, "unknown interface '" + id.interface_name + "'");
+            } else {
+                std::vector<std::string> vtable;
+                for (auto& mi : ii.value().methods) {
+                    std::string found_mangled;
+                    for (DeclId mid : id.methods) {
+                        const FnDecl& method = std::get<FnDecl>(prog_.decl(mid));
+                        if (method.name == mi.name) {
+                            found_mangled = method.mangled_name;
+                            break;
+                        }
+                    }
+                    if (found_mangled.empty()) {
+                        err(id.span, "impl of '" + id.interface_name + "' for '" +
+                            id.struct_name + "' is missing method '" + mi.name + "'");
+                        vtable.push_back("__missing");
+                    } else {
+                        vtable.push_back(found_mangled);
+                    }
+                }
+                IfaceImplKey key{id.struct_name, id.interface_name};
+                prog_.iface_impls[key] = std::move(vtable);
+            }
+        }
+    } else if (std::holds_alternative<InterfaceDecl>(d)) {
+        auto& id = std::get<InterfaceDecl>(d);
+        InterfaceInfo info;
+        info.name = id.name;
+        std::vector<std::string> method_names;
+        for (auto& sig : id.methods) {
+            InterfaceMethodInfo mi;
+            mi.name = sig.name;
+            mi.return_type = sig.return_type.has_value()
+                ? resolve_type(sig.return_type.value())
+                : make_sem(prog_.semtypes, SemKind::Void);
+            for (auto& p : sig.params) {
+                mi.params.emplace_back(p.name, resolve_type(p.type));
+            }
+            info.methods.push_back(std::move(mi));
+            method_names.push_back(sig.name);
+        }
+        cur_scope().interfaces[id.name] = std::move(info);
+        prog_.interface_method_names[id.name] = std::move(method_names);
     }
 }
 
 void Analyser::register_fn(FnDecl& fd, const std::string& ns_prefix) {
     FnInfo fi;
-    fi.return_type = fd.return_type
-        ? resolve_type(fd.return_type.value())
-        : make_sem(prog_.semtypes, SemKind::Void);
+    if (fd.return_type.has_value()) {
+        fi.return_type = resolve_type(fd.return_type.value());
+        fd.sem_return = fi.return_type;
+    } else {
+        fi.return_type = make_sem(prog_.semtypes, SemKind::Void);
+        fd.sem_return = NO_ID;
+    }
 
     for (auto& p : fd.params) {
         fi.params.emplace_back(p.name, resolve_type(p.type));
@@ -426,8 +563,8 @@ void Analyser::register_fn(FnDecl& fd, const std::string& ns_prefix) {
     }
 
     fi.mangled_name = mangled;
+    fi.is_public = fd.is_public;  // A.2.12
     fd.mangled_name = mangled;
-    fd.sem_return = fi.return_type;
 
     cur_scope().fns[base].push_back(fi);
 }
@@ -438,6 +575,7 @@ void Analyser::register_struct(StructDecl& sd) {
     for (auto& f : sd.fields) {
         uint32_t st = resolve_type(f.type);
         si.fields.emplace_back(f.name, st);
+        si.field_visibility[f.name] = f.is_public;  // A.2.12
         f.sem_type = st;
         f.field_offset = off;
         off += 8;
@@ -464,15 +602,39 @@ void Analyser::analyse_decl(DeclId did) {
     }
 }
 
+void Analyser::update_fn_return_type(const std::string& mangled_name, uint32_t new_ret_type) {
+    for (auto& scope : scopes_) {
+        for (auto& [base, fns] : scope.fns) {
+            for (auto& fi : fns) {
+                if (fi.mangled_name == mangled_name) {
+                    fi.return_type = new_ret_type;
+                    return;
+                }
+            }
+        }
+    }
+}
+
 void Analyser::analyse_fn(FnDecl& fd) {
     int64_t saved_frame = frame_bytes_;
     frame_bytes_ = 0;
     uint32_t saved_ret = cur_ret_type_;
     bool saved_loop = in_loop_;
-
-    cur_ret_type_ = fd.sem_return != NO_ID
-                  ? fd.sem_return
-                  : make_sem(prog_.semtypes, SemKind::Void);
+    bool saved_inferring = inferring_return_;
+    uint32_t saved_inferred = inferred_return_type_;
+    std::string saved_impl = current_impl_struct_;
+    current_impl_struct_ = fd.impl_struct;
+    bool infer_ret = !fd.return_type.has_value();
+    if (infer_ret) {
+        inferring_return_ = true;
+        inferred_return_type_ = NO_ID;
+        cur_ret_type_ = NO_ID;
+    } else {
+        inferring_return_ = false;
+        cur_ret_type_ = fd.sem_return != NO_ID
+                      ? fd.sem_return
+                      : make_sem(prog_.semtypes, SemKind::Void);
+    }
     in_loop_ = false;
 
     push_scope();
@@ -495,9 +657,19 @@ void Analyser::analyse_fn(FnDecl& fd) {
     analyse_block(fd.body);
     fd.frame_bytes = static_cast<std::size_t>(frame_bytes_);
     pop_scope();
+    if (infer_ret) {
+        uint32_t inferred = (inferred_return_type_ != NO_ID)
+            ? inferred_return_type_
+            : make_sem(prog_.semtypes, SemKind::Void);
+        fd.sem_return = inferred;
+        update_fn_return_type(fd.mangled_name, inferred);
+    }
 
+    current_impl_struct_ = saved_impl;
     cur_ret_type_ = saved_ret;
     in_loop_ = saved_loop;
+    inferring_return_ = saved_inferring;
+    inferred_return_type_ = saved_inferred;
     frame_bytes_ = saved_frame;
 }
 
@@ -531,10 +703,27 @@ void Analyser::analyse_stmt_node(VarDeclStmt& vs, StmtId) {
     if (init_type != NO_ID &&
         prog_.semtypes.get(decl_type).kind != SemKind::Unknown &&
         !sem_equal(init_type, decl_type, prog_.semtypes)) {
-        err(expr_span(prog_.expr(vs.init)),
-            "type mismatch in declaration: expected " +
-            sem_to_string(decl_type, prog_.semtypes) + ", got " +
-            sem_to_string(init_type, prog_.semtypes));
+        SemKind ik = prog_.semtypes.get(init_type).kind;
+        SemKind dk = prog_.semtypes.get(decl_type).kind;
+        if (dk == SemKind::Interface && ik == SemKind::Struct) {
+            const std::string& iname = prog_.semtypes.get(decl_type).struct_name;
+            const std::string& sname = prog_.semtypes.get(init_type).struct_name;
+            auto ii = lookup_interface(iname);
+            if (!ii.has_value()) {
+                err(expr_span(prog_.expr(vs.init)), "unknown interface '" + iname + "'");
+            } else {
+                IfaceImplKey key{sname, iname};
+                if (prog_.iface_impls.find(key) == prog_.iface_impls.end()) {
+                    err(expr_span(prog_.expr(vs.init)),
+                        "struct '" + sname + "' does not implement interface '" + iname + "'");
+                }
+            }
+        } else if (!can_implicit_widen(ik, dk)) {
+            err(expr_span(prog_.expr(vs.init)),
+                "type mismatch in declaration: expected " +
+                sem_to_string(decl_type, prog_.semtypes) + ", got " +
+                sem_to_string(init_type, prog_.semtypes));
+        }
     }
 
     vs.sem_type = decl_type;
@@ -550,10 +739,10 @@ void Analyser::analyse_stmt_node(VarDeclStmt& vs, StmtId) {
     } else if (dt.kind == SemKind::Struct) {
         auto si = lookup_struct(dt.struct_name);
         if (si.has_value()) bytes = si.value().total_bytes;
+    } else if (dt.kind == SemKind::Interface) {
+        bytes = 16; 
     }
-
     if (bytes == 0) bytes = 8;
-
     vs.frame_offset = alloc_local(bytes);
     cur_scope().vars[vs.name] = {decl_type, vs.is_mut, true, vs.frame_offset};
 }
@@ -593,17 +782,37 @@ void Analyser::analyse_stmt_node(WhileStmt& ws, StmtId) {
 void Analyser::analyse_stmt_node(ReturnStmt& rs, StmtId sid) {
     if (rs.value.has_value()) {
         uint32_t vt = analyse_expr(rs.value.value());
-        if (vt != NO_ID && cur_ret_type_ != NO_ID &&
-            !sem_equal(vt, cur_ret_type_, prog_.semtypes)) {
+        if (inferring_return_) {
+            if (inferred_return_type_ == NO_ID) {
+                inferred_return_type_ = vt;
+            } else if (!sem_equal(vt, inferred_return_type_, prog_.semtypes)) {
+                SemKind vk = prog_.semtypes.get(vt).kind;
+                SemKind ik = prog_.semtypes.get(inferred_return_type_).kind;
+                if (can_implicit_widen(vk, ik)) {
+                } else if (can_implicit_widen(ik, vk)) {
+                    inferred_return_type_ = vt; 
+                } else {
+                    err(expr_span(prog_.expr(rs.value.value())),
+                        "conflicting inferred return types: " +
+                        sem_to_string(inferred_return_type_, prog_.semtypes) + " vs " +
+                        sem_to_string(vt, prog_.semtypes));
+                }
+            }
+        } else if (vt != NO_ID && cur_ret_type_ != NO_ID &&
+                   !sem_equal(vt, cur_ret_type_, prog_.semtypes)) {
             if (!try_coerce_literal(rs.value.value(), cur_ret_type_)) {
-                err(expr_span(prog_.expr(rs.value.value())),
-                    "return type mismatch: expected " +
-                    sem_to_string(cur_ret_type_, prog_.semtypes) + ", got " +
-                    sem_to_string(vt, prog_.semtypes));
+                SemKind vk = prog_.semtypes.get(vt).kind;
+                SemKind rk = prog_.semtypes.get(cur_ret_type_).kind;
+                if (!can_implicit_widen(vk, rk)) {
+                    err(expr_span(prog_.expr(rs.value.value())),
+                        "return type mismatch: expected " +
+                        sem_to_string(cur_ret_type_, prog_.semtypes) + ", got " +
+                        sem_to_string(vt, prog_.semtypes));
+                }
             }
         }
     } else {
-        if (cur_ret_type_ != NO_ID &&
+        if (!inferring_return_ && cur_ret_type_ != NO_ID &&
             prog_.semtypes.get(cur_ret_type_).kind != SemKind::Void) {
             err(stmt_span(prog_.stmt(sid)), "missing return value");
         }
@@ -699,6 +908,16 @@ uint32_t Analyser::analyse_expr_node(BinaryExpr& e) {
     if (!sem_equal(lt, rt, prog_.semtypes)) {
         if (try_coerce_literal(e.right, lt)) rt = lt;
         else if (try_coerce_literal(e.left, rt)) lt = rt;
+    }
+
+    if (!sem_equal(lt, rt, prog_.semtypes) && lt != NO_ID && rt != NO_ID) {
+        SemKind lk = prog_.semtypes.get(lt).kind;
+        SemKind rk = prog_.semtypes.get(rt).kind;
+        if (can_implicit_widen(lk, rk)) {
+            lt = rt; 
+        } else if (can_implicit_widen(rk, lk)) {
+            rt = lt; 
+        }
     }
 
     const std::string& op = e.op;
@@ -802,7 +1021,15 @@ uint32_t Analyser::analyse_expr_node(FieldExpr& e) {
     }
 
     for (auto& [n, t] : si.value().fields) {
-        if (n == e.field) return t;
+        if (n == e.field) {
+            auto vis_it = si.value().field_visibility.find(n);
+            bool is_pub = (vis_it == si.value().field_visibility.end()) || vis_it->second;
+            if (!is_pub && current_impl_struct_ != ot.struct_name) {
+                err(e.span, "field '" + e.field + "' of struct '" +
+                    ot.struct_name + "' is private");
+            }
+            return t;
+        }
     }
 
     err(e.span, "struct '" + ot.struct_name + "' has no field '" + e.field + "'");
@@ -835,8 +1062,34 @@ uint32_t Analyser::analyse_expr_node(CallExpr& e) {
         uint32_t obj_t = expr_sem_type(prog_.expr(fe.object));
         if (obj_t == NO_ID) obj_t = analyse_expr(fe.object);
         if (obj_t != NO_ID && prog_.semtypes.get(obj_t).kind == SemKind::Struct) {
-            fn_name = prog_.semtypes.get(obj_t).struct_name + "__" + fe.field;
+            const std::string& sname = prog_.semtypes.get(obj_t).struct_name;
+            fn_name = sname + "__" + fe.field;
             arg_types.insert(arg_types.begin(), obj_t);
+            auto si = lookup_struct(sname);
+            if (si.has_value()) {
+                auto vis_it = si.value().method_visibility.find(fe.field);
+                if (vis_it != si.value().method_visibility.end() &&
+                    !vis_it->second && current_impl_struct_ != sname) {
+                    err(fe.span, "method '" + fe.field + "' of struct '" +
+                        sname + "' is private");
+                }
+            }
+        } else if (obj_t != NO_ID && prog_.semtypes.get(obj_t).kind == SemKind::Interface) {
+            const std::string& iname = prog_.semtypes.get(obj_t).struct_name;
+            auto ii = lookup_interface(iname);
+            if (!ii.has_value()) {
+                err(fe.span, "unknown interface '" + iname + "'");
+                return make_sem(prog_.semtypes, SemKind::Unknown);
+            }
+            for (auto& mi : ii.value().methods) {
+                if (mi.name == fe.field) {
+                    e.resolved_fn = "__vtable_call__" + iname + "__" + fe.field;
+                    e.sem_type = mi.return_type;
+                    return mi.return_type;
+                }
+            }
+            err(fe.span, "interface '" + iname + "' has no method '" + fe.field + "'");
+            return make_sem(prog_.semtypes, SemKind::Unknown);
         } else {
             err(fe.span, "method call on non-struct");
             return make_sem(prog_.semtypes, SemKind::Unknown);
@@ -928,10 +1181,14 @@ uint32_t Analyser::analyse_expr_node(AssignExpr& e) {
             err(id_expr.span, "cannot assign to immutable variable '" + id_expr.name + "'");
         } else if (vt != NO_ID && !sem_equal(vt, vi.value().type, prog_.semtypes)) {
             if (!try_coerce_literal(e.value, vi.value().type)) {
-                err(expr_span(prog_.expr(e.value)),
-                    "assignment type mismatch: expected " +
-                    sem_to_string(vi.value().type, prog_.semtypes) + ", got " +
-                    sem_to_string(vt, prog_.semtypes));
+                SemKind vk = prog_.semtypes.get(vt).kind;
+                SemKind tk = prog_.semtypes.get(vi.value().type).kind;
+                if (!can_implicit_widen(vk, tk)) {
+                    err(expr_span(prog_.expr(e.value)),
+                        "assignment type mismatch: expected " +
+                        sem_to_string(vi.value().type, prog_.semtypes) + ", got " +
+                        sem_to_string(vt, prog_.semtypes));
+                }
             }
         }
 

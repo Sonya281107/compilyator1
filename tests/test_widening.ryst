@@ -1,0 +1,35 @@
+// Тест A.1.8: неявные расширяющие числовые приведения
+
+fn takes_f64(x: f64) -> f64 { return x; }
+fn takes_i64(x: i64) -> i64 { return x; }
+
+fn main() -> i64 {
+    // i8 → i64
+    let a: i8  = 42i8;
+    let b: i64 = a;
+    print(b);               // 42
+
+    // i32 → i64
+    let c: i32 = 1000i32;
+    let d: i64 = c;
+    print(d);               // 1000
+
+    // int literal → f64
+    let e: f64 = 7;
+    print(e);               // 7
+
+    // аргумент i64 → параметр f64
+    let f = takes_f64(5);
+    print(f);               // 5
+
+    // бинарная операция: int + float → float
+    let g: f64 = 3 + 1.5;
+    print(g);               // 4.5
+
+    // return: i32 → i64
+    let h = takes_i64(99i32);
+    print(h);               // 99
+
+    return 0;
+}
+// ожидаемый вывод: 42  1000  7  5  4.5  99
